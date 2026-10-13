@@ -48,6 +48,19 @@ if (process.argv[2] === '_watchdog') {
     .name('swep')
     .description('Ephemeral workspace manager with isolated browser profiles')
     .version(version, '-v, -V, --version', 'Show version');
+  const KNOWN_COMMANDS = new Set([
+    'up', 'login', 'open', 'chrome', 'checkout', 'exit', 'down',
+    'register', 'recover', 'revoke', 'doctor', 'update', 'help', '_watchdog'
+  ]);
+
+  const firstArg = process.argv[2];
+  if (firstArg && !firstArg.startsWith('-') && !KNOWN_COMMANDS.has(firstArg)) {
+    if (!firstArg.includes('-')) {
+      console.error(`error: unknown command '${firstArg}'`);
+      console.error("Run 'swep --help' for a list of available commands.\n");
+      process.exit(1);
+    }
+  }
 
   // Default command: swep <code>
   program

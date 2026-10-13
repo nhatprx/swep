@@ -71,15 +71,10 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
   // Require login code
   let inputCode = passedCode.trim();
 
-  // If switching to a different key, check out the existing one first
-  if (activeSession && activeSession.loginCode && activeSession.loginCode !== inputCode) {
-    console.log(chalk.dim('Switching keys. Checking out current key: ') + chalk.cyan(maskKey(activeSession.loginCode)) + chalk.dim('...'));
-    await checkoutCommand({ root: options.root });
-  }
-
   const parts = inputCode.split('-');
-  if (parts.length < 2) {
-    console.error('error: invalid code format (expected: <username>-<code>)');
+  if (parts.length < 2 || !parts[0] || !parts[1]) {
+    console.error(`error: invalid code format '${inputCode}' (expected: <username>-<code>)`);
+    console.error("Run 'swep --help' for available commands.\n");
     return;
   }
 
@@ -124,6 +119,14 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
       console.error(`error: authentication failed (${vaultErr.message})`);
       return;
     }
+  }
+
+  // If authenticated and switching from a previous active key, check out the previous one
+  if (activeSession && activeSession.loginCode && activeSession.loginCode !== inputCode) {
+    spinner.stop();
+    console.log(chalk.dim('Switching keys. Checking out current key: ') + chalk.cyan(maskKey(activeSession.loginCode)) + chalk.dim('...'));
+    await checkoutCommand({ root: options.root });
+    spinner.start('Launching new workspace...');
   }
 
   // 2. Detect browser (Chrome, Edge, Brave, etc.)
