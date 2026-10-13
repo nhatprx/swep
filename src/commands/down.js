@@ -34,6 +34,9 @@ export async function downCommand(options) {
         report.uninstalledChrome
           ? `✔ Đã gỡ bỏ Google Chrome (do Swep là bên cài đặt)`
           : `ℹ Giữ nguyên Google Chrome của máy (đã có từ trước)`,
+        report.uninstalledSwep
+          ? `✔ Đã tự động xóa sạch toàn bộ Swep và gỡ khỏi PATH hệ thống`
+          : `ℹ Chế độ repo cục bộ: giữ nguyên mã nguồn dev`,
         `✔ Clipboard đã được dọn sạch`,
         '',
         chalk.yellow.bold('⚠ VIỆC CẦN LÀM THỦ CÔNG:'),

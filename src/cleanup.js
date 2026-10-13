@@ -5,7 +5,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import chalk from 'chalk';
 import { killSwepChromeProcesses } from './chrome.js';
@@ -183,14 +183,29 @@ export async function performCleanup(rootDir, options = {}) {
       report.removedFiles.push(logsDir);
     }
 
-    // Xóa thư mục gốc nếu rỗng
-    try {
-      if (fs.existsSync(rootDir) && fs.readdirSync(rootDir).length === 0) {
-        fs.rmdirSync(rootDir);
-        report.removedFiles.push(rootDir);
+    // 6. Tự hủy toàn bộ Swep nếu chạy từ thư mục cài đặt (%LOCALAPPDATA%\Swep)
+    const isInstalledSwep = fs.existsSync(path.join(rootDir, 'app')) || fs.existsSync(path.join(rootDir, 'bin'));
+    if (isInstalledSwep) {
+      const binDir = path.join(rootDir, 'bin');
+      const psSelfDestruct = `Start-Sleep -Seconds 2; Remove-Item -Path '${rootDir}' -Recurse -Force -ErrorAction SilentlyContinue; $currentPath = [Environment]::GetEnvironmentVariable('Path', 'User'); if ($currentPath -like '*${binDir}*') { $newPath = ($currentPath -split ';' | Where-Object { $_ -ne '${binDir}' -and $_ -ne '' }) -join ';'; [Environment]::SetEnvironmentVariable('Path', $newPath, 'User'); }`;
+
+      spawn('powershell', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', psSelfDestruct], {
+        detached: true,
+        stdio: 'ignore',
+      }).unref();
+
+      report.uninstalledSwep = true;
+      report.removedFiles.push(rootDir);
+    } else {
+      // Xóa thư mục gốc nếu rỗng (chế độ development)
+      try {
+        if (fs.existsSync(rootDir) && fs.readdirSync(rootDir).length === 0) {
+          fs.rmdirSync(rootDir);
+          report.removedFiles.push(rootDir);
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
   }
 
