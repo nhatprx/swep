@@ -85,6 +85,7 @@ Swep backs up your encrypted session data, closes the browser, and removes all l
 | `swep <code>` | `swep up`, `swep login` | Restore a session and launch an isolated browser profile (Chrome, Edge, Brave). |
 | `swep open` | `swep chrome` | Reopen the active Swep browser session. |
 | `swep exit` | `swep down` | Back up session data and clean up the local workspace. |
+| `swep update` | — | Check and update Swep to the latest version. |
 | `swep register` | — | Initialize the account and encrypted vault. |
 | `swep -v` | `swep --version` | Display the current version. |
 | `swep doctor` | — | Diagnose system and connectivity issues. |

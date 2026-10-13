@@ -16,6 +16,7 @@ import {
   doctorCommand,
   openCommand,
   chromeCommand,
+  updateCommand,
 } from '../src/commands/index.js';
 
 const version = '0.1.3';
@@ -78,5 +79,11 @@ program
   .description('Check system prerequisites')
   .option('--root <path>', 'Workspace root directory')
   .action(doctorCommand);
+
+// Update command
+program
+  .command('update')
+  .description('Check and update Swep to the latest version')
+  .action(() => updateCommand(version));
 
 program.parse(process.argv);
