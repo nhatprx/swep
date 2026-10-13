@@ -1,0 +1,17 @@
+@{
+    "@schema" = "2.0"
+    "defaultLocale" = "en-US"
+    "defaultScope" = "user"
+    "id" = "Swep"
+    "properties" = @(
+        @{
+            "name" = "Identifier"
+            "value" = "Swep"
+        }
+        @{
+            "name" = "URL"
+            "value" = "https://raw.githubusercontent.com/nhatprx/swep/v0.1.0/install.ps1"
+        }
+    )
+    "version" = "0.1.0"
+}

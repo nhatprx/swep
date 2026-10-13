@@ -1,0 +1,46 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Runtime
+dist/
+build/
+.cache/
+
+# Secrets (CRITICAL: NEVER commit)
+**/*.key
+**/*.pem
+**/*secret*
+**/*token*
+.env*
+!.env.example
+credentials.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Swep runtime (test/development)
+.swep-test/
+test-profile/

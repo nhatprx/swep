@@ -1,0 +1,44 @@
+{
+  "name": "swep",
+  "version": "0.1.0",
+  "description": "Swep: Một lệnh để bắt đầu → nhập mã cá nhân → Chrome đã đăng nhập Google",
+  "type": "module",
+  "bin": {
+    "swep": "./bin/swep.js"
+  },
+  "scripts": {
+    "test": "node --test tests/**/*.test.js",
+    "lint": "eslint .",
+    "crypto:test": "node --test tests/crypto.test.js",
+    "dev": "node bin/swep.js",
+    "gate": "node gate/server.js",
+    "build": "npm run lint && npm test"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "commander": "^11.1.0",
+    "chalk": "^5.3.0",
+    "ora": "^8.0.0",
+    "axios": "^1.6.0",
+    "argon2": "^0.31.1",
+    "tweetnacl": "^1.0.3",
+    "crypto-js": "^4.2.0",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "eslint": "^8.54.0",
+    "@eslint/js": "^8.54.0"
+  },
+  "keywords": [
+    "chrome",
+    "google",
+    "authentication",
+    "mfa",
+    "totp",
+    "temporary-access"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}
