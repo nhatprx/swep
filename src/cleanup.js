@@ -299,16 +299,6 @@ try {
       report.removedFiles.push(defaultSwepDir);
     } catch {
       // ignore
-    } else {
-      // Xóa thư mục gốc nếu rỗng (chế độ development)
-      try {
-        if (fs.existsSync(rootDir) && fs.readdirSync(rootDir).length === 0) {
-          fs.rmdirSync(rootDir);
-          report.removedFiles.push(rootDir);
-        }
-      } catch {
-        // ignore
-      }
     }
   }
 
