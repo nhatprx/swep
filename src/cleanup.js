@@ -208,6 +208,7 @@ export async function performCleanup(rootDir, options = {}) {
 
     // 6. Tự hủy toàn bộ Swep nếu chạy từ thư mục cài đặt (%LOCALAPPDATA%\Swep)
     const isInstalledSwep = fs.existsSync(path.join(rootDir, 'app')) || fs.existsSync(path.join(rootDir, 'bin'));
+    if (isInstalledSwep) {
       const binDir = path.join(rootDir, 'bin');
       const psScript = `
 Start-Sleep -Seconds 1
