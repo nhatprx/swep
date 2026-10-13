@@ -19,9 +19,26 @@
 - **Recovery Key:** Recover access to your encrypted vault using a separately generated recovery key.
 - **Built-in Diagnostics:** Check system prerequisites, Chrome, Node.js, Registry configuration, and network connectivity with `swep doctor`.
 
-## Quick Start (Install with One Command)
+## Quick Start
 
-Open PowerShell and run:
+### Cách 1: Chạy trực tiếp qua npx (Không cần cài đặt trước)
+
+Nếu máy đã có Node.js, bạn có thể chạy ngay lập tức mà không cần cài đặt:
+
+```powershell
+npx @nhatprx/swep <login-code>
+```
+
+Hoặc cài đặt toàn cục để dùng lệnh ngắn gọn `swep`:
+
+```powershell
+npm i -g @nhatprx/swep
+swep <login-code>
+```
+
+### Cách 2: Tự động cài đặt 1 lệnh trên Windows (Auto-install Node.js & Swep)
+
+Mở PowerShell và chạy:
 
 ```powershell
 irm https://raw.githubusercontent.com/nhatprx/swep/main/install.ps1 | iex
