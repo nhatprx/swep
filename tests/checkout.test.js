@@ -23,6 +23,16 @@ test('session: save, getActiveKey with maskedKey, and remove', () => {
       loginCode: 'nhatprx-AB1234567C',
     });
 
+    // Without chrome-profile, should return null (no ghost session)
+    assert.strictEqual(getActiveKey(tmpDir), null);
+
+    // With chrome-profile, should return active key
+    fs.mkdirSync(path.join(tmpDir, 'chrome-profile'), { recursive: true });
+    saveActiveSession(tmpDir, {
+      handle: 'nhatprx',
+      loginCode: 'nhatprx-AB1234567C',
+    });
+
     const active = getActiveKey(tmpDir);
     assert.ok(active);
     assert.strictEqual(active.rawKey, 'nhatprx-AB1234567C');

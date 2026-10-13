@@ -229,6 +229,11 @@ export function maskKey(key) {
 export function getActiveKey(rootDir) {
   const session = readActiveSession(rootDir);
   if (!session) return null;
+  const profileDir = path.join(rootDir, 'chrome-profile');
+  if (!fs.existsSync(profileDir)) {
+    removeActiveSession(rootDir);
+    return null;
+  }
   const rawKey = session.loginCode || session.handle || '';
   if (!rawKey) return null;
   return {

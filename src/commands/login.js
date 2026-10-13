@@ -20,6 +20,7 @@ import chalk from 'chalk';
 import {
   saveActiveSession,
   readActiveSession,
+  getActiveKey,
   maskKey,
 } from '../bridge.js';
 import { spawnWatchdog } from '../watchdog.js';
@@ -54,19 +55,11 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
 
   // If no code provided
   if (!passedCode) {
-    if (activeSession && (activeSession.loginCode || activeSession.handle)) {
-      const masked = maskKey(activeSession.loginCode || activeSession.handle);
-      console.log(chalk.dim('key-id: ') + chalk.cyan(masked) + chalk.dim(' (active)'));
+    const active = getActiveKey(rootDir);
+    if (active) {
+      console.log(chalk.dim('key-id: ') + chalk.cyan(active.maskedKey) + chalk.dim(' (active)'));
       console.log("Workspace active. Run 'swep open' to view browser, 'swep checkout' to switch key, or 'swep exit' to clean and exit.\n");
       return;
-    }
-
-    if (fs.existsSync(existingProfileDir)) {
-      const opened = await openSwepBrowser(rootDir, 'https://www.google.com');
-      if (opened) {
-        console.log("Workspace reopened. Run 'swep checkout' or 'swep exit' when done.");
-        return;
-      }
     }
 
     console.error("usage: swep <code>");

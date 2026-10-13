@@ -11,7 +11,7 @@ import ora from 'ora';
 import chalk from 'chalk';
 import { getSwepRoot, killSwepBrowserProcesses } from '../chrome.js';
 import { performCleanup } from '../cleanup.js';
-import { readActiveSession, removeActiveSession, maskKey } from '../bridge.js';
+import { readActiveSession, removeActiveSession, getActiveKey, maskKey } from '../bridge.js';
 import { uploadVaultToGitHub, uploadProfileCapsuleToGitHub } from '../vault.js';
 import { aead_encrypt } from '../crypto.js';
 import { getCookiesViaCDP, closeChromeViaCDP } from '../cdp.js';
@@ -19,10 +19,10 @@ import { packProfileDirectory, encryptCapsule } from '../profile.js';
 
 export async function downCommand(options = {}) {
   const rootDir = getSwepRoot(options.root);
-  const activeSession = readActiveSession(rootDir);
+  const active = getActiveKey(rootDir);
 
-  if (activeSession && (activeSession.loginCode || activeSession.handle)) {
-    console.log(chalk.dim('key-id: ') + chalk.cyan(maskKey(activeSession.loginCode || activeSession.handle)));
+  if (active) {
+    console.log(chalk.dim('key-id: ') + chalk.cyan(active.maskedKey));
   }
 
   const spinner = ora({
