@@ -117,7 +117,8 @@ export async function checkoutCommand(options = {}) {
       const dek = Buffer.from(activeSession.dek, 'hex');
       const encryptedCapsule = encryptCapsule(gzArchive, dek, `${activeSession.handle}/capsule/v2`);
 
-      await uploadProfileCapsuleToGitHub(activeSession.github_pat, activeSession.handle, encryptedCapsule);
+      const targetRepo = activeSession.vaultRepo || 'swep-vault';
+      await uploadProfileCapsuleToGitHub(activeSession.github_pat, activeSession.handle, encryptedCapsule, targetRepo);
 
       const userPayload = activeSession.userPayload || {};
       userPayload.session = {
@@ -137,7 +138,7 @@ export async function checkoutCommand(options = {}) {
         payload: encryptedPayload,
         updated_at: new Date().toISOString(),
       };
-      await uploadVaultToGitHub(activeSession.github_pat, activeSession.handle, vaultData);
+      await uploadVaultToGitHub(activeSession.github_pat, activeSession.handle, vaultData, targetRepo);
     } catch {
       // ignore
     }

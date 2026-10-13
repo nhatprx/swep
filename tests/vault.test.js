@@ -55,3 +55,11 @@ test('vault: zero-server encryption and decryption flow', async () => {
   assert.strictEqual(decryptedPayload.google_email, 'mywork@gmail.com');
   assert.strictEqual(decryptedPayload.google_password, 'superSecretPassword');
 });
+
+test('vault: checkVaultRepoExists handles 404 gracefully', async () => {
+  const { checkVaultRepoExists } = await import('../src/vault.js');
+  // Non-existent repo should return false
+  const exists = await checkVaultRepoExists('fake_token', 'nhatprx_nonexistent_user', 'swep-vault');
+  assert.strictEqual(exists, false);
+});
+

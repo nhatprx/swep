@@ -9,7 +9,12 @@ import ora from 'ora';
 import { printBanner, printBox, prompt, promptConfirm, createSpinner } from '../ui.js';
 import { openCleanBrowserForGitHub, getClipboardText, getSwepRoot } from '../chrome.js';
 import { getGitHubUser } from '../github.js';
-import { ensureVaultRepo, uploadVaultToGitHub } from '../vault.js';
+import {
+  ensureVaultRepo,
+  uploadVaultToGitHub,
+  checkVaultRepoExists,
+  findNextVaultRepoName,
+} from '../vault.js';
 import { saveActiveSession, maskKey } from '../bridge.js';
 import { spawnWatchdog } from '../watchdog.js';
 import {
@@ -76,6 +81,24 @@ export async function registerCommand(options) {
     }
   }
 
+  // Check if repository already exists on GitHub
+  let targetRepo = 'swep-vault';
+  const repoExists = await checkVaultRepoExists(cleanToken, handle, 'swep-vault');
+
+  if (repoExists) {
+    console.log();
+    console.log(chalk.yellow(`Repository 'swep-vault' already exists on https://github.com/${handle}/swep-vault`));
+    const overwrite = await promptConfirm('Do you want to overwrite the existing vault?', false);
+
+    if (overwrite) {
+      targetRepo = 'swep-vault';
+    } else {
+      const suggestedName = await findNextVaultRepoName(cleanToken, handle, 'swep-vault');
+      const enteredName = await prompt('Enter new repository name', suggestedName);
+      targetRepo = enteredName.trim() || suggestedName;
+    }
+  }
+
   const spinner = ora({
     text: 'Generating client-side encryption keys...',
     color: 'cyan',
@@ -114,11 +137,11 @@ export async function registerCommand(options) {
   };
 
   if (!options.dryRun) {
-    spinner.text = 'Initializing swep-vault repository on GitHub...';
+    spinner.text = `Initializing ${targetRepo} repository on GitHub...`;
     try {
-      await ensureVaultRepo(cleanToken);
-      spinner.text = 'Uploading encrypted vault to GitHub...';
-      await uploadVaultToGitHub(cleanToken, handle, vaultData);
+      await ensureVaultRepo(cleanToken, targetRepo);
+      spinner.text = `Uploading encrypted vault to GitHub (${targetRepo})...`;
+      await uploadVaultToGitHub(cleanToken, handle, vaultData, targetRepo);
     } catch (err) {
       spinner.stop();
       console.error(`error: ${err.message}`);
@@ -134,6 +157,7 @@ export async function registerCommand(options) {
   saveActiveSession(rootDir, {
     handle,
     loginCode: fullLoginCode,
+    vaultRepo: targetRepo,
     github_pat: cleanToken,
     dek: dek.toString('hex'),
     wrap_code: vaultData.wrap_code,
@@ -147,7 +171,7 @@ export async function registerCommand(options) {
   console.log(chalk.dim('  key-id:       ') + chalk.cyan(maskKey(fullLoginCode)) + chalk.dim(' (active)'));
   console.log(chalk.dim('  login code:   ') + chalk.bold.green(fullLoginCode));
   console.log(chalk.dim('  recovery key: ') + chalk.bold.yellow(recoveryKey));
-  console.log(chalk.dim('  vault repo:   ') + chalk.cyan(`https://github.com/${handle}/swep-vault`));
+  console.log(chalk.dim('  vault repo:   ') + chalk.cyan(`https://github.com/${handle}/${targetRepo}`));
   console.log();
   console.log(`Registered. Run 'swep ${chalk.bold.green(fullLoginCode)}' or 'swep' to start.\n`);
 }

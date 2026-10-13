@@ -113,7 +113,8 @@ export async function downCommand(options = {}) {
       // Mã hóa AEAD ChaCha20-Poly1305 với chữ ký xác thực toàn vẹn
       const encryptedCapsule = encryptCapsule(gzArchive, dek, `${activeSession.handle}/capsule/v2`);
 
-      await uploadProfileCapsuleToGitHub(activeSession.github_pat, activeSession.handle, encryptedCapsule);
+      const targetRepo = activeSession.vaultRepo || 'swep-vault';
+      await uploadProfileCapsuleToGitHub(activeSession.github_pat, activeSession.handle, encryptedCapsule, targetRepo);
 
       // Cập nhật metadata trong vault.json
       const userPayload = activeSession.userPayload || {};
@@ -134,7 +135,7 @@ export async function downCommand(options = {}) {
         payload: encryptedPayload,
         updated_at: new Date().toISOString(),
       };
-      await uploadVaultToGitHub(activeSession.github_pat, activeSession.handle, vaultData);
+      await uploadVaultToGitHub(activeSession.github_pat, activeSession.handle, vaultData, targetRepo);
     } catch {
       // capsule upload error - continue to cleanup
     }
