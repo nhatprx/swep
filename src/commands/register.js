@@ -1,11 +1,14 @@
 /**
- * Command: register
- * Đăng ký lần đầu (cần GitHub Device Flow + Google account riêng cho công việc)
+ * Command: register (Zero-Server GitHub Architecture)
+ * Đăng ký tài khoản: Mở Chromium hoàn toàn mới để đăng nhập GitHub,
+ * tạo kho lưu trữ swep-vault và lưu gói dữ liệu đã mã hóa lên GitHub của bạn
  */
 
 import chalk from 'chalk';
 import { printBanner, printBox, prompt, promptSecret, createSpinner } from '../ui.js';
-import { startDeviceFlow, pollForToken, getGitHubUser } from '../github.js';
+import { openCleanBrowserForGitHub } from '../chrome.js';
+import { getGitHubUser } from '../github.js';
+import { ensureVaultRepo, uploadVaultToGitHub } from '../vault.js';
 import {
   generateDEK,
   generateCode,
@@ -15,45 +18,54 @@ import {
   aead_encrypt,
   generateRecoveryKey,
   deriveRecoveryKeyBuffer,
-  deriveRecoveryAuth,
   getTOTP,
 } from '../crypto.js';
-import { defaultGate } from '../gate.js';
 
 export async function registerCommand(options) {
   printBanner();
-  console.log(chalk.bold.cyan('📝 Bắt đầu quy trình Đăng ký tài khoản Swep mới\n'));
+  console.log(chalk.bold.cyan('📝 Bắt đầu quy trình Đăng ký Swep Vault (Zero-Server)\n'));
 
-  if (options.dryRun) {
-    console.log(chalk.yellow('ℹ Chế độ --dry-run: sẽ mô phỏng mà không gửi yêu cầu lên Gate.\n'));
+  // 1. Mở Chromium độc lập để người dùng đăng nhập GitHub
+  console.log(chalk.cyan('👉 Swep đang mở một cửa sổ Chrome mới (profile cô lập) để bạn đăng nhập GitHub...'));
+  console.log(chalk.dim('   (Trang web sẽ tự mở đến trang cấp quyền Personal Access Token cho repo swep-vault)\n'));
+
+  const tokenUrl = 'https://github.com/settings/tokens/new?description=Swep+Vault+Access&scopes=public_repo';
+
+  try {
+    await openCleanBrowserForGitHub(tokenUrl);
+    console.log(chalk.green('✔ Đã mở trình duyệt! Hãy thực hiện các bước sau trên trình duyệt vừa mở:'));
+    console.log(`   1. Đăng nhập vào tài khoản GitHub của bạn.`);
+    console.log(`   2. Cuộn xuống cuối trang và bấm ${chalk.bold.green('"Generate token"')}.`);
+    console.log(`   3. Copy chuỗi token tạo được (${chalk.dim('bắt đầu bằng ghp_...')}).\n`);
+  } catch (err) {
+    console.log(chalk.yellow(`⚠ Không thể tự động mở Chrome: ${err.message}`));
+    console.log(`👉 Vui lòng mở thủ công link: ${chalk.underline.cyan(tokenUrl)}\n`);
   }
 
-  // 1. GitHub Device Flow
-  let githubToken = 'mock_gh_token';
-  let handle = 'testuser';
-
-  if (!options.dryRun) {
-    try {
-      const spinner = createSpinner('Đang khởi tạo phiên xác thực GitHub Device Flow...');
-      const device = await startDeviceFlow();
-      spinner.stop();
-
-      console.log(`\n👉 Mở trình duyệt: ${chalk.bold.underline.cyan(device.verification_uri || 'https://github.com/login/device')}`);
-      console.log(`🔑 Nhập mã xác nhận: ${chalk.bold.green(device.user_code)}\n`);
-
-      githubToken = await pollForToken(device.device_code, device.interval);
-      const user = await getGitHubUser(githubToken);
-      handle = user.handle;
-      console.log(`${chalk.green('✔')} Xác nhận bạn là: ${chalk.bold.cyan(handle)}\n`);
-    } catch (err) {
-      console.log(chalk.yellow(`⚠ Không thể hoàn tất GitHub OAuth online: ${err.message}`));
-      handle = (await prompt('Nhập GitHub handle của bạn để tiếp tục', 'user')).toLowerCase();
-      console.log(chalk.dim(`(Tiếp tục với handle: ${handle})\n`));
-    }
+  // 2. Nhận token từ người dùng
+  const githubToken = await promptSecret('Dán Personal Access Token (ghp_...) vào đây');
+  if (!githubToken || !githubToken.trim().startsWith('ghp_') && !githubToken.trim().startsWith('github_pat_')) {
+    console.log(chalk.red('Token không đúng định dạng. Hủy bỏ.'));
+    return;
   }
 
-  // 2. Thu thập thông tin Google
-  console.log(chalk.yellow.bold('⚠ LƯU Ý: Khuyến nghị dùng tài khoản Google RIÊNG cho công việc.'));
+  const cleanToken = githubToken.trim();
+
+  // Xác thực token và lấy thông tin người dùng
+  const spinUser = createSpinner('Đang xác thực tài khoản GitHub...');
+  let handle;
+  try {
+    const user = await getGitHubUser(cleanToken);
+    handle = user.handle;
+    spinUser.succeed(`Đã xác thực thành công tài khoản GitHub: @${chalk.bold.cyan(handle)}`);
+  } catch (err) {
+    spinUser.fail(chalk.red(`Token không hợp lệ hoặc không có quyền: ${err.message}`));
+    return;
+  }
+
+  // 3. Nhập thông tin tài khoản Google
+  console.log();
+  console.log(chalk.yellow.bold('⚠ LƯU Ý: Khuyến nghị sử dụng tài khoản Google RIÊNG cho công việc.'));
   const googleEmail = await prompt('Tài khoản Google (email)');
   if (!googleEmail || !googleEmail.includes('@')) {
     console.log(chalk.red('Email không hợp lệ. Hủy bỏ.'));
@@ -81,13 +93,10 @@ export async function registerCommand(options) {
     return;
   }
 
-  const spinCrypto = createSpinner('Đang mã hóa gói dữ liệu với Argon2id và AEAD...');
+  // 4. Mật mã hóa phía Client (Argon2id + ChaCha20-Poly1305)
+  const spinCrypto = createSpinner('Đang mã hóa dữ liệu với Argon2id và AEAD...');
 
-  // 3. Mật mã hóa phía Client
-  // DEK (Data Encryption Key)
   const dek = generateDEK();
-
-  // Payload
   const rawPayload = {
     google_email: googleEmail,
     google_password: googlePassword,
@@ -97,58 +106,66 @@ export async function registerCommand(options) {
   const aadPayload = `${handle}/1`;
   const encryptedPayload = aead_encrypt(dek, rawPayload, aadPayload);
 
-  // Sinh mã 6 ký tự
-  const rawCode = generateCode(6);
+  // Sinh mã an toàn 10 ký tự Crockford Base32 (~50 bit entropy)
+  const rawCode = generateCode(10);
   const normalizedCode = normalizeCode(rawCode);
 
-  // Dẫn xuất seed và khóa
   const seed = await deriveSeed(normalizedCode, handle);
-  const authKey = hkdf(seed, 'swep/auth');
   const codeKey = hkdf(seed, 'swep/wrap');
-
-  // Wrap DEK bằng code_key
   const wrapCode = aead_encrypt(codeKey, { dek: dek.toString('hex') }, `${handle}/code`);
 
-  // Recovery Key
+  // Recovery Key 128 bit
   const recoveryKey = generateRecoveryKey();
   const recoveryKeyBuf = deriveRecoveryKeyBuffer(recoveryKey);
   const wrapRecovery = aead_encrypt(recoveryKeyBuf, { dek: dek.toString('hex') }, `${handle}/recovery`);
-  const recoveryAuth = deriveRecoveryAuth(recoveryKey);
 
-  spinCrypto.succeed('Mã hóa dữ liệu hoàn tất!');
+  spinCrypto.succeed('Mã hóa dữ liệu an toàn hoàn tất!');
 
-  // 4. Gửi lên Gate
+  // Gói vault lưu trữ trên GitHub
+  const vaultData = {
+    handle,
+    version: 1,
+    wrap_code: wrapCode,
+    wrap_recovery: wrapRecovery,
+    payload: encryptedPayload,
+    updated_at: new Date().toISOString(),
+  };
+
+  // 5. Tạo repository swep-vault và tải file lên GitHub của user
   if (!options.dryRun) {
-    const spinGate = createSpinner('Đang lưu thông tin an toàn lên Swep Gate...');
+    const spinRepo = createSpinner(`Đang khởi tạo repository 'swep-vault' trên GitHub của @${handle}...`);
     try {
-      await defaultGate.register({
-        github_token: githubToken,
-        handle,
-        google_email: googleEmail,
-        auth_hash: authKey.toString('hex'),
-        wrap_code: wrapCode,
-        wrap_recovery: wrapRecovery,
-        recovery_auth: recoveryAuth,
-        payload: encryptedPayload,
-      });
-      spinGate.succeed('Đăng ký tài khoản trên Swep Gate thành công!');
+      await ensureVaultRepo(cleanToken);
+      spinRepo.succeed(`Repository 'swep-vault' đã sẵn sàng trên GitHub!`);
     } catch (err) {
-      spinGate.warn(chalk.yellow(`Lưu ý kết nối Gate: ${err.message} (Chạy ở chế độ độc lập/local)`));
+      spinRepo.fail(chalk.red(`Không thể tạo repo: ${err.message}`));
+      return;
+    }
+
+    const spinUpload = createSpinner('Đang commit file vault.json đã mã hóa lên GitHub...');
+    try {
+      await uploadVaultToGitHub(cleanToken, handle, vaultData);
+      spinUpload.succeed('Đã lưu trữ dữ liệu an toàn vào GitHub của bạn!');
+    } catch (err) {
+      spinUpload.fail(chalk.red(`Lỗi upload: ${err.message}`));
+      return;
     }
   }
 
-  // 5. Trình bày mã cho người dùng
+  // 6. Hiển thị thông tin hoàn tất
   const fullLoginCode = `${handle}-${rawCode}`;
   console.log();
   printBox(
-    'Thông tin xác thực của bạn',
+    'Thông tin xác thực Swep của bạn',
     [
       `MÃ ĐĂNG NHẬP:   ${chalk.bold.green(fullLoginCode)}`,
       `KHÓA KHÔI PHỤC: ${chalk.bold.yellow(recoveryKey)}`,
+      `KHO LƯU TRỮ:    ${chalk.dim(`https://github.com/${handle}/swep-vault`)}`,
       '',
-      chalk.dim('Hãy lưu cả hai ở nơi an toàn. Khóa khôi phục sẽ KHÔNG hiển thị lại!'),
+      chalk.dim('Lưu lại mã này ở nơi an toàn. Khóa khôi phục sẽ KHÔNG hiển thị lại!'),
     ],
     'green'
   );
-  console.log(chalk.bold.cyan('\nBây giờ bạn có thể dùng lệnh "swep" trên bất kỳ máy tính nào với mã trên!'));
+
+  console.log(chalk.bold.cyan('\n🎉 Hoàn tất! Từ nay trên bất kỳ máy mượn nào, bạn chỉ cần gõ "swep" và nhập mã trên!'));
 }

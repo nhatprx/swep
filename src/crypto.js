@@ -147,6 +147,12 @@ export function generateCode(length = 6) {
   if (length === 6) {
     return `${code.slice(0, 3)}-${code.slice(3)}`;
   }
+  if (length === 10) {
+    return `${code.slice(0, 4)}-${code.slice(4, 8)}-${code.slice(8)}`;
+  }
+  if (length === 12) {
+    return `${code.slice(0, 4)}-${code.slice(4, 8)}-${code.slice(8)}`;
+  }
   return code;
 }
 

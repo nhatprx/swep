@@ -102,6 +102,39 @@ export async function launchIsolatedChrome(chromeExe, rootDir, targetUrl = 'http
 }
 
 /**
+ * Mở một cửa sổ Chromium hoàn toàn mới, độc lập không dính dữ liệu cũ
+ * dùng riêng cho quy trình xác thực GitHub / setup
+ * @param {string} targetUrl
+ * @returns {Promise<import('child_process').ChildProcess>}
+ */
+export async function openCleanBrowserForGitHub(targetUrl = 'https://github.com/settings/tokens/new?description=Swep+Vault+Access&scopes=public_repo') {
+  const chromeExe = await findChromePath();
+  if (!chromeExe) {
+    throw new Error('Không tìm thấy Google Chrome trên máy.');
+  }
+
+  const tempAuthProfile = path.join(process.env.TEMP || 'C:\\Temp', `swep-auth-${Date.now()}`);
+  if (!fs.existsSync(tempAuthProfile)) {
+    fs.mkdirSync(tempAuthProfile, { recursive: true });
+  }
+
+  const args = [
+    `--user-data-dir=${tempAuthProfile}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    targetUrl,
+  ];
+
+  const child = spawn(chromeExe, args, {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
+
+  return child;
+}
+
+/**
  * Tìm và đóng các tiến trình Chrome ĐANG DÙNG profile của Swep
  * Tuyệt đối không đóng tiến trình Chrome của người dùng chính
  * @param {string} rootDir
