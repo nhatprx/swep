@@ -214,3 +214,51 @@ export async function uploadProfileCapsuleToGitHub(token, handle, encryptedCapsu
   }
 }
 
+/**
+ * Kiểm tra trạng thái khóa phiên đồng thời (Distributed Session Concurrency Lock)
+ * @param {object} vaultData
+ * @returns {{ locked: boolean, isStale: boolean, lock: object|null }}
+ */
+export function checkSessionLock(vaultData) {
+  if (!vaultData || !vaultData.lock || !vaultData.lock.active) {
+    return { locked: false, isStale: false, lock: null };
+  }
+
+  const now = Date.now();
+  const expiresAt = new Date(vaultData.lock.expires_at).getTime();
+
+  if (now >= expiresAt) {
+    // Khóa đã hết hạn (stale lease lock do máy trước bị tắt đột ngột/mất nguồn)
+    return { locked: false, isStale: true, lock: vaultData.lock };
+  }
+
+  return { locked: true, isStale: false, lock: vaultData.lock };
+}
+
+/**
+ * Tạo object Lock mới để chiếm quyền phiên
+ * @param {string} holderName Tên máy hoặc định danh thiết bị
+ * @param {number} [ttlMs=300000] Thời gian thuê khóa (mặc định 5 phút)
+ * @returns {object}
+ */
+export function createSessionLockData(holderName, ttlMs = 300000) {
+  const now = Date.now();
+  return {
+    active: true,
+    holder: holderName,
+    locked_at: new Date(now).toISOString(),
+    expires_at: new Date(now + ttlMs).toISOString(),
+  };
+}
+
+/**
+ * Tạo object giải phóng lock khi người dùng xong việc (swep down)
+ * @returns {object}
+ */
+export function createReleaseLockData() {
+  return {
+    active: false,
+    released_at: new Date().toISOString(),
+  };
+}
+

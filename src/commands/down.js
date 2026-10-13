@@ -12,7 +12,11 @@ import { printBanner, printBox, createSpinner } from '../ui.js';
 import { getSwepRoot, killSwepChromeProcesses } from '../chrome.js';
 import { performCleanup } from '../cleanup.js';
 import { readActiveSession, removeActiveSession } from '../bridge.js';
-import { uploadVaultToGitHub, uploadProfileCapsuleToGitHub } from '../vault.js';
+import {
+  uploadVaultToGitHub,
+  uploadProfileCapsuleToGitHub,
+  createReleaseLockData,
+} from '../vault.js';
 import { aead_encrypt } from '../crypto.js';
 import { getCookiesViaCDP } from '../cdp.js';
 import { packProfileDirectory, encryptCapsule } from '../profile.js';
@@ -127,6 +131,7 @@ export async function downCommand(options = {}) {
         wrap_recovery: activeSession.wrap_recovery,
         payload: encryptedPayload,
         updated_at: new Date().toISOString(),
+        lock: createReleaseLockData(),
       };
       await uploadVaultToGitHub(activeSession.github_pat, activeSession.handle, vaultData);
     } catch (capsuleErr) {
