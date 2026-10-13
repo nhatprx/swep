@@ -87,7 +87,8 @@ export async function loginCommand(options = {}) {
     dekBuffer = Buffer.from(dekObj.dek, 'hex');
     userPayload = aead_decrypt(dekBuffer, vaultData.payload, `${handle}/1`);
 
-    spinAuth.succeed(`Đã tải và giải mã thành công vault từ GitHub: ${chalk.bold.cyan(userPayload.google_email)}`);
+    const displayAccount = userPayload.google_email || `@${handle}`;
+    spinAuth.succeed(`Đã tải và giải mã thành công vault từ GitHub: ${chalk.bold.cyan(displayAccount)}`);
   } catch (vaultErr) {
     // Nếu không tải được từ GitHub Vault, thử fallback sang Swep Gate nếu có
     try {
@@ -101,7 +102,8 @@ export async function loginCommand(options = {}) {
       userPayload = aead_decrypt(dekBuffer, loginRes.payload, `${handle}/1`);
 
       vaultData = loginRes;
-      spinAuth.succeed(`Đã đăng nhập thành công qua Swep Gate: ${chalk.bold.cyan(userPayload.google_email)}`);
+      const displayAccount = userPayload.google_email || `@${handle}`;
+      spinAuth.succeed(`Đã đăng nhập thành công qua Swep Gate: ${chalk.bold.cyan(displayAccount)}`);
     } catch {
       spinAuth.fail(chalk.red(`Đăng nhập thất bại: ${vaultErr.message}`));
       return;
@@ -129,7 +131,7 @@ export async function loginCommand(options = {}) {
   // 4. Ghi Snapshot và Ledger
   takeBeforeSnapshot(rootDir, {
     handle,
-    email: userPayload.google_email,
+    email: userPayload.google_email || handle,
     chromeExe,
   });
 
@@ -151,7 +153,7 @@ export async function loginCommand(options = {}) {
   // Lưu trạng thái phiên đang hoạt động vào active-session.json
   saveActiveSession(rootDir, {
     handle,
-    google_email: userPayload.google_email,
+    google_email: userPayload.google_email || handle,
     github_pat: userPayload.github_pat,
     dek: dekBuffer.toString('hex'),
     wrap_code: vaultData.wrap_code,
@@ -200,8 +202,8 @@ export async function loginCommand(options = {}) {
 
   // 7. Bật Màn hình điều khiển phiên trực tiếp (Live Session Dashboard & 2FA Ticker)
   await startLiveSessionDashboard({
-    email: userPayload.google_email,
-    totpSecret: userPayload.totp_secret,
+    email: userPayload.google_email || `@${handle}`,
+    totpSecret: userPayload.totp_secret || '',
     getLatestCookies: bridge.getLatestCookies,
     onOpenChrome: async () => {
       await openSwepChrome(rootDir, targetUrl);

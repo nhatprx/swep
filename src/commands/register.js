@@ -18,7 +18,6 @@ import {
   aead_encrypt,
   generateRecoveryKey,
   deriveRecoveryKeyBuffer,
-  getTOTP,
 } from '../crypto.js';
 
 export async function registerCommand(options) {
@@ -87,79 +86,15 @@ export async function registerCommand(options) {
     }
   }
 
-  // 3. Nhập thông tin tài khoản Google (Có vòng lặp kiểm tra)
-  console.log();
-  console.log(chalk.yellow.bold('⚠ LƯU Ý: Khuyến nghị sử dụng tài khoản Google RIÊNG cho công việc.'));
-
-  let googleEmail = '';
-  while (true) {
-    googleEmail = (await prompt('Tài khoản Google (email)')).trim();
-    if (googleEmail.toLowerCase() === 'exit' || googleEmail.toLowerCase() === 'q') return;
-    if (googleEmail && googleEmail.includes('@') && googleEmail.includes('.')) {
-      break;
-    }
-    console.log(chalk.yellow('⚠ Email không hợp lệ (cần có @ và tên miền, ví dụ user@gmail.com). Vui lòng nhập lại:'));
-  }
-
-  let googlePassword = '';
-  while (true) {
-    googlePassword = await promptSecret('Mật khẩu Google');
-    if (googlePassword) break;
-    console.log(chalk.yellow('⚠ Mật khẩu không được để trống. Vui lòng nhập lại:'));
-  }
-
-  // Khóa 2FA TOTP (Tùy chọn - có vòng lặp hướng dẫn)
-  console.log(chalk.cyan.bold('\n🔐 Khóa 2FA TOTP (để Swep tự sinh mã 6 số và đăng nhập 100% không cần điện thoại):'));
-  console.log(chalk.dim('   • Lấy tại: myaccount.google.com/security -> Xác minh 2 bước -> Authenticator -> "Không thể quét mã?"'));
-  console.log(chalk.dim('   • Là chuỗi chữ cái Base32 bí mật (16-32 ký tự, không chứa số 0, 1, 8, 9).'));
-  console.log(chalk.dim('   • Hoặc nhấn Enter để BỎ QUA (nếu bạn muốn xác nhận bằng điện thoại khi mở Chrome).\n'));
-
-  let cleanTotp = '';
-  while (true) {
-    const totpInput = await promptSecret('Khóa 2FA TOTP (Nhấn Enter để bỏ qua)');
-    cleanTotp = (totpInput || '').trim();
-
-    if (!cleanTotp) {
-      console.log(chalk.dim('✔ Đã bỏ qua khóa 2FA (bạn sẽ xác thực bằng điện thoại khi Google hỏi trên Chrome).\n'));
-      break;
-    }
-
-    if (/^\d{6}$/.test(cleanTotp)) {
-      console.log(chalk.yellow('\n⚠ Bạn vừa nhập mã OTP 6 số tạm thời (đổi mỗi 30s trên app, không phải Khóa thiết lập Base32 dài).'));
-      const retry = await promptConfirm('Bạn có muốn thử nhập lại khóa 2FA dài không? [y = nhập lại, n = bỏ qua]', false);
-      if (retry) {
-        continue;
-      } else {
-        cleanTotp = '';
-        break;
-      }
-    }
-
-    // Kiểm tra tính hợp lệ của chuỗi Base32
-    try {
-      const testTotp = getTOTP(cleanTotp);
-      console.log(`${chalk.green('✔')} Khóa 2FA hợp lệ! Mã thử nghiệm hiện tại: [${chalk.bold.yellow(testTotp)}]\n`);
-      break;
-    } catch (err) {
-      console.log(chalk.yellow(`\n⚠ Khóa 2FA Base32 không hợp lệ (${err.message}).`));
-      const retry = await promptConfirm('Bạn có muốn thử nhập lại khóa 2FA không? [y = thử lại, n = bỏ qua]', true);
-      if (!retry) {
-        cleanTotp = '';
-        break;
-      }
-    }
-  }
-
-  // 4. Mật mã hóa phía Client (Argon2id + ChaCha20-Poly1305)
-  const spinCrypto = createSpinner('Đang mã hóa dữ liệu với Argon2id và AEAD...');
+  // 3. Mật mã hóa phía Client (Argon2id + ChaCha20-Poly1305)
+  const spinCrypto = createSpinner('Đang khởi tạo mã hóa an toàn với Argon2id và AEAD...');
 
   const dek = generateDEK();
   const rawPayload = {
-    google_email: googleEmail,
-    google_password: googlePassword,
-    totp_secret: cleanTotp,
+    handle,
     github_pat: cleanToken,
     session: null,
+    created_at: new Date().toISOString(),
     version: 1,
   };
   const aadPayload = `${handle}/1`;
