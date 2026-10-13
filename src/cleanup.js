@@ -101,15 +101,20 @@ export async function removeDirectoryRecursive(dirPath, retries = 5) {
       fs.rmSync(dirPath, { recursive: true, force: true });
       return;
     } catch (err) {
+      // Dùng PowerShell Remove-Item Force qua EncodedCommand
+      try {
+        const psScript = `Remove-Item -LiteralPath "${dirPath}" -Recurse -Force -ErrorAction SilentlyContinue`;
+        const b64 = Buffer.from(psScript, 'utf16le').toString('base64');
+        await execAsync(`powershell -NoProfile -EncodedCommand ${b64}`);
+        if (!fs.existsSync(dirPath)) return;
+      } catch {
+        // ignore
+      }
+
+      if (!fs.existsSync(dirPath)) return;
+
       if (i === retries - 1) {
-        // Fallback dùng PowerShell force xóa
-        try {
-          const escaped = dirPath.replace(/'/g, "''");
-          await execAsync(`powershell -NoProfile -Command "Remove-Item -Path '${escaped}' -Recurse -Force -ErrorAction SilentlyContinue"`);
-          if (!fs.existsSync(dirPath)) return;
-        } catch {
-          // ignore
-        }
+        if (!fs.existsSync(dirPath)) return;
         throw err;
       }
       await new Promise((r) => setTimeout(r, 800));
