@@ -208,6 +208,7 @@ export async function loginCommand(options = {}) {
   // 8. Bật Màn hình điều khiển phiên trực tiếp (Live Session Dashboard & 2FA Ticker)
   await startLiveSessionDashboard({
     email: userPayload.google_email || `@${handle}`,
+    password: userPayload.google_password || '',
     totpSecret: userPayload.totp_secret || '',
     getLatestCookies: () => latestCookiesCache,
     onOpenChrome: async () => {

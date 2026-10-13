@@ -145,6 +145,7 @@ export function createSpinner(text) {
  */
 export function startLiveSessionDashboard({
   email,
+  password = '',
   totpSecret = '',
   getLatestCookies = () => [],
   onOpenChrome = async () => {},
@@ -155,10 +156,11 @@ export function startLiveSessionDashboard({
     console.log(chalk.cyan('─────────────────────────────────────────────────────────────'));
     console.log(chalk.cyan.bold('  ⚡ SWEP DISPOSABLE WORKPLACE (Profile Cô Lập Đang Chạy)'));
     console.log(`     Tài khoản: ${chalk.bold(email)}`);
-    console.log(chalk.dim('     Phím tắt:  [O] Mở Chrome  |  [D] Xong & Dọn dẹp  |  [Q] Thoát'));
-    if (totpSecret) {
-      console.log(chalk.dim('                [C] Copy mã 2FA vào Clipboard'));
-    }
+    const shortcuts = ['[O] Mở Chrome'];
+    if (password) shortcuts.push('[P] Copy Mật khẩu');
+    if (totpSecret) shortcuts.push('[C] Copy mã 2FA');
+    shortcuts.push('[D] Xong & Dọn dẹp', '[Q] Thoát');
+    console.log(chalk.dim(`     Phím tắt:  ${shortcuts.join('  |  ')}`));
     console.log(chalk.cyan('─────────────────────────────────────────────────────────────\n'));
 
     let timer = null;
@@ -220,7 +222,10 @@ export function startLiveSessionDashboard({
         if (isCleaningUp) return;
         const ch = String(key).toLowerCase();
 
-        if (ch === 'c' && totpSecret) {
+        if (ch === 'p' && password) {
+          await copyToClipboardWithAutoClear(password, 25);
+          process.stdout.write(`\r  ✔ Đã copy Mật khẩu vào Clipboard (sẽ tự xóa sau 25s)!             \n`);
+        } else if (ch === 'c' && totpSecret) {
           const nowSec = Math.floor(Date.now() / 1000);
           const currentCode = getTOTP(totpSecret, nowSec);
           await copyToClipboardWithAutoClear(currentCode, 25);
