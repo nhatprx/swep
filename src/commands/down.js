@@ -5,7 +5,8 @@
  * 2. Đóng Chrome của Swep, xóa profile, xóa logs, gỡ app nếu do Swep cài, in báo cáo
  */
 
-import chalk from 'axios'; // will be replaced
+import fs from 'fs';
+import path from 'path';
 import axios from 'axios';
 import chalkCol from 'chalk';
 import { printBanner, printBox, createSpinner } from '../ui.js';
@@ -41,6 +42,21 @@ export async function downCommand(options = {}) {
           }
         } catch {
           // Bridge có thể đã dừng nếu tiến trình chính bị tắt
+        }
+      }
+
+      // Nếu Bridge không trả về, thử đọc file backup latest-cookies.json
+      if (latestCookies.length === 0) {
+        const backupFile = path.join(rootDir, 'latest-cookies.json');
+        if (fs.existsSync(backupFile)) {
+          try {
+            const saved = JSON.parse(fs.readFileSync(backupFile, 'utf8'));
+            if (Array.isArray(saved) && saved.length > 0) {
+              latestCookies = saved;
+            }
+          } catch {
+            // ignore
+          }
         }
       }
 

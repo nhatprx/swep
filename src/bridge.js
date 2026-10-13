@@ -24,7 +24,7 @@ const __dirname = path.dirname(__filename);
  *   close: () => Promise<void>
  * }>}
  */
-export function startBridge(initialCookies = []) {
+export function startBridge(initialCookies = [], rootDir = '') {
   return new Promise((resolve, reject) => {
     let latestCookies = Array.isArray(initialCookies) ? [...initialCookies] : [];
     let injectedResolver = null;
@@ -69,6 +69,13 @@ export function startBridge(initialCookies = []) {
             const data = JSON.parse(body);
             if (Array.isArray(data.cookies) && data.cookies.length) {
               latestCookies = data.cookies;
+              if (rootDir) {
+                try {
+                  fs.writeFileSync(path.join(rootDir, 'latest-cookies.json'), JSON.stringify(latestCookies, null, 2), 'utf8');
+                } catch {
+                  // ignore
+                }
+              }
             }
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ status: 'ok', count: latestCookies.length }));
@@ -142,12 +149,13 @@ export function prepareExtensionDir(rootDir, port, targetUrl = 'https://accounts
   fs.copyFileSync(manifestSrc, path.join(extensionDest, 'manifest.json'));
   fs.copyFileSync(bgSrc, path.join(extensionDest, 'background.js'));
 
-  // Ghi file config.json cho extension
+  // Ghi file config.json và config.js cho extension
   const config = {
     port,
     targetUrl,
   };
   fs.writeFileSync(path.join(extensionDest, 'config.json'), JSON.stringify(config, null, 2), 'utf8');
+  fs.writeFileSync(path.join(extensionDest, 'config.js'), `self.SWEP_CONFIG = ${JSON.stringify(config)};\n`, 'utf8');
 
   return extensionDest;
 }

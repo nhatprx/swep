@@ -146,7 +146,7 @@ export async function loginCommand(options = {}) {
     ? userPayload.session.cookies
     : [];
 
-  const bridge = await startBridge(initialCookies);
+  const bridge = await startBridge(initialCookies, rootDir);
   const targetUrl = initialCookies.length ? 'https://myaccount.google.com' : 'https://accounts.google.com';
   const extensionDir = prepareExtensionDir(rootDir, bridge.port, targetUrl);
 

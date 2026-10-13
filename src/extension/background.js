@@ -3,28 +3,22 @@
  * Tự động nạp cookies khi mở Chrome và đồng bộ cookies mới nhất về Swep CLI
  */
 
-let bridgePort = 0;
+try {
+  importScripts('config.js');
+} catch (err) {
+  // config.js will be loaded on startup
+}
+
+const bridgePort = (typeof self.SWEP_CONFIG !== 'undefined' && self.SWEP_CONFIG.port)
+  ? self.SWEP_CONFIG.port
+  : 0;
+
 let syncTimeout = null;
 let hasInjected = false;
-
-// Đọc cấu hình từ config.json
-async function loadConfig() {
-  try {
-    const res = await fetch(chrome.runtime.getURL('config.json'));
-    const cfg = await res.json();
-    bridgePort = cfg.port || 0;
-    return cfg;
-  } catch (err) {
-    console.warn('[Swep] Không đọc được config.json:', err);
-    return null;
-  }
-}
 
 // Bơm danh sách cookies vào Chrome
 async function injectCookies(cookies, targetUrl) {
   if (!cookies || !cookies.length) return;
-
-  console.log(`[Swep] Đang nạp ${cookies.length} cookies vào Chrome...`);
 
   for (const c of cookies) {
     try {
@@ -51,7 +45,6 @@ async function injectCookies(cookies, targetUrl) {
       }
 
       if (c.expirationDate && !c.session) {
-        // Đảm bảo cookie còn hạn
         if (c.expirationDate > Math.floor(Date.now() / 1000)) {
           details.expirationDate = c.expirationDate;
         }
@@ -59,11 +52,9 @@ async function injectCookies(cookies, targetUrl) {
 
       await chrome.cookies.set(details);
     } catch (err) {
-      // Một số cookie đặc thù có thể bỏ qua nếu lỗi
+      // ignore individual cookie set failures
     }
   }
-
-  console.log('[Swep] Đã nạp xong toàn bộ cookies thành công!');
 }
 
 // Lấy tất cả cookies từ trình duyệt và gửi về Swep Bridge
@@ -72,64 +63,63 @@ async function dumpAndSyncCookies() {
 
   try {
     const allCookies = await chrome.cookies.getAll({});
-    // Lọc cookie Google và các trang liên quan
-    const relevantCookies = allCookies.filter((c) => {
-      const dom = (c.domain || '').toLowerCase();
-      return dom.includes('google') || dom.includes('youtube') || dom.includes('github');
-    });
+    if (!allCookies || !allCookies.length) return;
 
     await fetch(`http://127.0.0.1:${bridgePort}/sync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cookies: relevantCookies.length ? relevantCookies : allCookies }),
+      body: JSON.stringify({ cookies: allCookies }),
     });
   } catch (err) {
-    // Bridge có thể chưa sẵn sàng hoặc đã đóng
+    // Bridge may be busy
   }
 }
 
 // Khởi chạy quy trình ban đầu
 async function init() {
-  const cfg = await loadConfig();
-  if (!cfg || !cfg.port) return;
+  if (!bridgePort) return;
 
-  bridgePort = cfg.port;
-
-  // 1. Lấy dữ liệu phiên từ Swep Bridge
+  // 1. Lấy dữ liệu phiên từ Swep Bridge nếu có
   try {
     const res = await fetch(`http://127.0.0.1:${bridgePort}/session`);
     const data = await res.json();
 
     if (data.cookies && data.cookies.length && !hasInjected) {
       hasInjected = true;
-      await injectCookies(data.cookies, cfg.targetUrl || 'https://accounts.google.com');
+      const targetUrl = (typeof self.SWEP_CONFIG !== 'undefined' && self.SWEP_CONFIG.targetUrl)
+        ? self.SWEP_CONFIG.targetUrl
+        : 'https://accounts.google.com';
+
+      await injectCookies(data.cookies, targetUrl);
 
       // Báo cho Bridge biết đã nạp xong
       await fetch(`http://127.0.0.1:${bridgePort}/injected`, { method: 'POST' });
 
-      // Chuyển trang chủ tab hiện tại sang myaccount để kiểm tra phiên
+      // Chuyển tab hiện tại sang myaccount để kiểm tra phiên
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tabs[0]?.id) {
         chrome.tabs.update(tabs[0].id, { url: 'https://myaccount.google.com' });
       }
     }
   } catch (err) {
-    console.warn('[Swep] Lỗi kết nối tới Bridge khi khởi động:', err);
+    // ignore
   }
 
-  // 2. Lắng nghe thay đổi cookie để tự động đồng bộ liên tục
+  // 2. Thu thập và gửi cookies hiện có ngay khi mở
+  await dumpAndSyncCookies();
+
+  // 3. Lắng nghe thay đổi cookie để tự động đồng bộ ngay lập tức (debounce 1s)
   chrome.cookies.onChanged.addListener(() => {
     if (syncTimeout) clearTimeout(syncTimeout);
     syncTimeout = setTimeout(() => {
       dumpAndSyncCookies();
-    }, 2000);
+    }, 1000);
   });
 
-  // 3. Heartbeat định kỳ mỗi 15 giây
+  // 4. Heartbeat đồng bộ mỗi 10 giây
   setInterval(() => {
     dumpAndSyncCookies();
-  }, 15000);
+  }, 10000);
 }
 
-// Kích hoạt
 init();

@@ -93,7 +93,7 @@ export function readLedger(rootDir) {
  * @param {string} dirPath
  * @param {number} [retries=3]
  */
-export async function removeDirectoryRecursive(dirPath, retries = 3) {
+export async function removeDirectoryRecursive(dirPath, retries = 5) {
   if (!fs.existsSync(dirPath)) return;
 
   for (let i = 0; i < retries; i++) {
@@ -101,8 +101,18 @@ export async function removeDirectoryRecursive(dirPath, retries = 3) {
       fs.rmSync(dirPath, { recursive: true, force: true });
       return;
     } catch (err) {
-      if (i === retries - 1) throw err;
-      await new Promise((r) => setTimeout(r, 1000));
+      if (i === retries - 1) {
+        // Fallback dùng PowerShell force xóa
+        try {
+          const escaped = dirPath.replace(/'/g, "''");
+          await execAsync(`powershell -NoProfile -Command "Remove-Item -Path '${escaped}' -Recurse -Force -ErrorAction SilentlyContinue"`);
+          if (!fs.existsSync(dirPath)) return;
+        } catch {
+          // ignore
+        }
+        throw err;
+      }
+      await new Promise((r) => setTimeout(r, 800));
     }
   }
 }
@@ -128,6 +138,8 @@ export async function performCleanup(rootDir, options = {}) {
     console.log(chalk.yellow('[dry-run] Sẽ đóng các tiến trình Chrome chạy profile Swep'));
   } else {
     report.killedProcesses = await killSwepChromeProcesses(rootDir);
+    // Chờ 1.5s để Windows giải phóng hoàn toàn file handles của Chrome
+    await new Promise((r) => setTimeout(r, 1500));
   }
 
   // 2. Xóa clipboard nếu còn

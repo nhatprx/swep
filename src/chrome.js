@@ -168,14 +168,11 @@ export async function openCleanBrowserForGitHub(targetUrl = 'https://github.com/
  * @returns {Promise<number>} Số tiến trình đã đóng
  */
 export async function killSwepChromeProcesses(rootDir) {
-  const profileDir = path.join(rootDir, 'chrome-profile');
-  const normalizedProfileDir = profileDir.replace(/\\/g, '\\\\');
-
   let killedCount = 0;
 
   try {
-    // Sử dụng PowerShell để lọc chính xác tiến trình có CommandLine chứa profileDir của Swep
-    const psCommand = `Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" | Where-Object { $_.CommandLine -like "*${normalizedProfileDir}*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force; $_.ProcessId }`;
+    // Sử dụng PowerShell để lọc chính xác tiến trình có CommandLine chứa profile của Swep
+    const psCommand = `Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" | ForEach-Object { if ($_.CommandLine -match 'Swep[\\\\/]chrome-profile') { Stop-Process -Id $_.ProcessId -Force; $_.ProcessId } }`;
     const { stdout } = await execAsync(`powershell -NoProfile -Command "${psCommand}"`);
     const pids = stdout.trim().split(/\r?\n/).filter(Boolean);
     killedCount = pids.length;
