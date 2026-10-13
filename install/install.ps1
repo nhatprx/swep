@@ -98,7 +98,4 @@ if ($userPath -notlike "*$binDir*") {
     Write-Host "✔ Đã đăng ký lệnh 'swep' vào hệ thống." -ForegroundColor Green
 }
 
-Write-Host "`n🚀 Đang khởi động Swep...`n" -ForegroundColor Green
-
-# 6. Chạy Swep ngay lập tức
-& node $entryPoint
+Write-Host "`n🎉 Cài đặt Swep hoàn tất! Gõ 'swep <mã>' để bắt đầu (hoặc 'swep register' nếu chưa có mã).`n" -ForegroundColor Green
