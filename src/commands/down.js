@@ -8,7 +8,6 @@
 import fs from 'fs';
 import path from 'path';
 import chalkCol from 'chalk';
-import { printBanner, printBox, createSpinner } from '../ui.js';
 import { getSwepRoot, killSwepChromeProcesses } from '../chrome.js';
 import { performCleanup } from '../cleanup.js';
 import { readActiveSession, removeActiveSession } from '../bridge.js';

@@ -12,10 +12,8 @@ import {
   prompt,
   promptConfirm,
   createSpinner,
-  startLiveSessionDashboard,
 } from '../ui.js';
 import { registerCommand } from './register.js';
-import { downCommand } from './down.js';
 import {
   deriveSeed,
   hkdf,
@@ -37,7 +35,6 @@ import {
 import {
   getFreePort,
   injectCookiesViaCDP,
-  getCookiesViaCDP,
   navigatePageViaCDP,
 } from '../cdp.js';
 import {

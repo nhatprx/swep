@@ -173,8 +173,9 @@ export async function killSwepChromeProcesses(rootDir) {
   let killedCount = 0;
 
   try {
+    const escapedRoot = rootDir ? rootDir.replace(/'/g, "''") : 'chrome-profile';
     const psScript = `
-$procs = Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" | Where-Object { $_.CommandLine -like '*chrome-profile*' }
+$procs = Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" | Where-Object { $_.CommandLine -like '*${escapedRoot}*' }
 # 1. Thử gửi tín hiệu đóng nhẹ nhàng trước
 foreach ($p in $procs) {
     try {

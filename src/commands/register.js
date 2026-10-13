@@ -5,7 +5,7 @@
  */
 
 import chalk from 'chalk';
-import { printBanner, printBox, prompt, promptSecret, promptConfirm, createSpinner } from '../ui.js';
+import { printBanner, printBox, prompt, promptConfirm, createSpinner } from '../ui.js';
 import { openCleanBrowserForGitHub, getClipboardText } from '../chrome.js';
 import { getGitHubUser } from '../github.js';
 import { ensureVaultRepo, uploadVaultToGitHub } from '../vault.js';
