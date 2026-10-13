@@ -91,19 +91,38 @@ export async function registerCommand(options) {
     return;
   }
 
-  const totpSecret = await promptSecret('Khóa 2FA TOTP (chuỗi Base32 khi cài Google Authenticator)');
-  if (!totpSecret) {
-    console.log(chalk.red('Khóa 2FA không được để trống. Hủy bỏ.'));
-    return;
+  console.log(chalk.dim('\nKhóa 2FA TOTP là chuỗi ký tự bí mật Base32 (khi bấm "Không quét được mã QR?" lúc cài Authenticator).'));
+  console.log(chalk.dim('Nếu bạn không có hoặc dùng xác thực khác (SMS/Prompt), hãy nhấn Enter để BỎ QUA.'));
+  const totpInput = await promptSecret('Khóa 2FA TOTP (Tùy chọn - Nhấn Enter để bỏ qua)');
+
+  let cleanTotp = (totpInput || '').trim();
+
+  if (/^\d{6}$/.test(cleanTotp)) {
+    console.log(chalk.yellow('\n⚠ Bạn vừa nhập mã OTP 6 số tạm thời (mã này đổi sau 30s trên điện thoại, không phải Khóa thiết lập 2FA).'));
+    const skip = await promptConfirm('Bạn có muốn bỏ qua bước này và tiếp tục đăng ký không?', true);
+    if (skip) {
+      cleanTotp = '';
+    } else {
+      console.log(chalk.dim('Hủy bỏ.'));
+      return;
+    }
   }
 
-  // Thử tính mã TOTP để kiểm tra tính hợp lệ
-  try {
-    const testTotp = getTOTP(totpSecret);
-    console.log(`${chalk.green('✔')} Đã kiểm tra khóa 2FA: mã hiện thời là [${chalk.bold.yellow(testTotp)}]\n`);
-  } catch (err) {
-    console.log(chalk.red(`Khóa TOTP Base32 không hợp lệ: ${err.message}`));
-    return;
+  if (cleanTotp) {
+    try {
+      const testTotp = getTOTP(cleanTotp);
+      console.log(`${chalk.green('✔')} Đã kiểm tra khóa 2FA: mã hiện thời là [${chalk.bold.yellow(testTotp)}]\n`);
+    } catch (err) {
+      console.log(chalk.yellow(`\n⚠ Khóa 2FA Base32 không hợp lệ (${err.message}).`));
+      const skip = await promptConfirm('Bạn có muốn tiếp tục mà không lưu khóa 2FA này không?', true);
+      if (skip) {
+        cleanTotp = '';
+      } else {
+        return;
+      }
+    }
+  } else {
+    console.log(chalk.dim('✔ Đã bỏ qua khóa 2FA (bạn sẽ xác thực bằng điện thoại khi Google yêu cầu trên Chrome).\n'));
   }
 
   // 4. Mật mã hóa phía Client (Argon2id + ChaCha20-Poly1305)
@@ -113,7 +132,7 @@ export async function registerCommand(options) {
   const rawPayload = {
     google_email: googleEmail,
     google_password: googlePassword,
-    totp_secret: totpSecret,
+    totp_secret: cleanTotp,
     version: 1,
   };
   const aadPayload = `${handle}/1`;
