@@ -206,7 +206,7 @@ export async function performCleanup(rootDir, options = {}) {
       report.removedFiles.push(logsDir);
     }
 
-    // 6. Tự hủy toàn bộ Swep nếu chạy từ thư mục cài đặt (%LOCALAPPDATA%\Swep)
+    // 6. Tự hủy toàn bộ Swep trên hệ thống (Self-Destruction)
     const localAppData = process.env.LOCALAPPDATA || path.join(process.env.USERPROFILE || 'C:\\', 'AppData', 'Local');
     const defaultSwepDir = path.join(localAppData, 'Swep').toLowerCase();
     const isInstalledSwep =
@@ -233,7 +233,7 @@ if ($regPath) {
         // ignore
       }
 
-      // 6.2 Xóa ngay file lệnh swep.cmd đồng bộ để mọi lệnh swep sau đó lập tức vô hiệu
+      // 6.2 Xóa ngay file lệnh swep.cmd đồng bộ nếu có
       try {
         if (fs.existsSync(swepCmd)) {
           fs.unlinkSync(swepCmd);
@@ -241,42 +241,64 @@ if ($regPath) {
       } catch {
         // ignore
       }
+    }
 
-      // 6.3 Tắt các tiến trình node chạy ngầm của Swep (nếu có, trừ chính process hiện tại)
-      try {
-        const killLingering = `
+    // 6.3 Tắt các tiến trình node chạy ngầm của Swep (nếu có, trừ chính process hiện tại)
+    try {
+      const killLingering = `
 Get-CimInstance Win32_Process | Where-Object { ($_.CommandLine -like '*\\Swep\\*' -or $_.CommandLine -like '*swep.js*') -and $_.ProcessId -ne ${process.pid} } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 `;
-        const b64Kill = Buffer.from(killLingering, 'utf16le').toString('base64');
-        await execAsync(`powershell -NoProfile -NonInteractive -EncodedCommand ${b64Kill}`);
-      } catch {
-        // ignore
-      }
+      const b64Kill = Buffer.from(killLingering, 'utf16le').toString('base64');
+      await execAsync(`powershell -NoProfile -NonInteractive -EncodedCommand ${b64Kill}`);
+    } catch {
+      // ignore
+    }
 
-      // 6.4 Kích hoạt tiến trình PowerShell ngầm độc lập để dọn sạch 100% thư mục %LOCALAPPDATA%\Swep sau khi process.exit()
-      try {
-        const psDestructScript = `
+    // 6.4 Kích hoạt tiến trình PowerShell ngầm độc lập để:
+    // - Dọn sạch 100% thư mục %LOCALAPPDATA%\\Swep sau khi process.exit()
+    // - Tự động gỡ sạch gói npm global (@nhatprx/swep) và mọi shim lệnh swep (swep.ps1, swep.cmd)
+    try {
+      const psDestructScript = `
 Start-Sleep -Seconds 1
-for ($i = 0; $i -lt 15; $i++) {
-  if (-not (Test-Path -LiteralPath '${rootDir.replace(/'/g, "''")}')) { break }
-  Remove-Item -LiteralPath '${rootDir.replace(/'/g, "''")}' -Recurse -Force -ErrorAction SilentlyContinue
-  cmd.exe /c "rd /s /q \\"${rootDir}\\" >nul 2>nul"
-  Start-Sleep -Milliseconds 600
+# 1. Dọn sạch thư mục %LOCALAPPDATA%\\Swep nếu có
+for ($i = 0; $i -lt 10; $i++) {
+  if (Test-Path -LiteralPath '${defaultSwepDir.replace(/'/g, "''")}') {
+    Remove-Item -LiteralPath '${defaultSwepDir.replace(/'/g, "''")}' -Recurse -Force -ErrorAction SilentlyContinue
+    cmd.exe /c "rd /s /q \\"${defaultSwepDir}\\" >nul 2>nul"
+  } else {
+    break
+  }
+  Start-Sleep -Milliseconds 500
+}
+
+# 2. Tự gỡ bỏ gói npm global @nhatprx/swep và các shim lệnh swep
+try {
+  & npm uninstall -g @nhatprx/swep --silent 2>$null
+  & npm uninstall -g swep --silent 2>$null
+  $npmPrefix = & npm config get prefix 2>$null
+  if ($npmPrefix -and (Test-Path $npmPrefix)) {
+    Get-ChildItem -Path $npmPrefix -Filter "swep*" -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+    $pkgDir = Join-Path $npmPrefix "node_modules\\@nhatprx\\swep"
+    if (Test-Path $pkgDir) {
+      Remove-Item -Path $pkgDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
+} catch {
+  # ignore
 }
 `;
-        const b64Destruct = Buffer.from(psDestructScript, 'utf16le').toString('base64');
-        const cp = spawn('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-EncodedCommand', b64Destruct], {
-          detached: true,
-          stdio: 'ignore',
-          windowsHide: true,
-        });
-        cp.unref();
-      } catch {
-        // ignore
-      }
+      const b64Destruct = Buffer.from(psDestructScript, 'utf16le').toString('base64');
+      const cp = spawn('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-EncodedCommand', b64Destruct], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      cp.unref();
 
       report.uninstalledSwep = true;
-      report.removedFiles.push(rootDir);
+      report.removedFiles.push(defaultSwepDir);
+    } catch {
+      // ignore
     } else {
       // Xóa thư mục gốc nếu rỗng (chế độ development)
       try {

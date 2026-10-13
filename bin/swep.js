@@ -17,7 +17,7 @@ import {
   chromeCommand,
 } from '../src/commands/index.js';
 
-const version = '0.1.0';
+const version = '0.1.1';
 
 program
   .name('swep')
