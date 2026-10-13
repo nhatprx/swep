@@ -17,64 +17,64 @@ import {
   chromeCommand,
 } from '../src/commands/index.js';
 
-const version = '0.1.1';
+const version = '0.1.2';
 
 program
   .name('swep')
-  .description(chalk.bold('Swep: Temporary Chrome profile with Google login'))
-  .version(version, '-v, -V, --version', 'Hiển thị phiên bản của Swep');
+  .description('Ephemeral workspace manager with isolated Chrome profiles')
+  .version(version, '-v, -V, --version', 'Show version');
+
+// Default command: swep <code>
+program
+  .command('up [code]', { isDefault: true })
+  .alias('login')
+  .description('Launch workspace with login code (default)')
+  .option('--dry-run', 'Print actions without executing')
+  .option('--root <path>', 'Workspace root directory')
+  .action((code, options) => loginCommand(code, options));
+
+// Chrome command
+program
+  .command('chrome')
+  .alias('open')
+  .description('Reopen active Chrome workspace window')
+  .option('--root <path>', 'Workspace root directory')
+  .action(chromeCommand);
+
+// Exit command
+program
+  .command('exit')
+  .alias('down')
+  .description('Save session to GitHub and remove local workspace')
+  .option('--dry-run', 'Print actions without executing')
+  .option('--root <path>', 'Workspace root directory')
+  .action(downCommand);
 
 // Register command
 program
   .command('register')
-  .description('Đăng ký lần đầu (cần GitHub + Google account riêng cho công việc)')
-  .option('--dry-run', 'Chỉ in ra, không thực hiện')
+  .description('Register vault and generate login code')
+  .option('--dry-run', 'Print actions without executing')
   .action(registerCommand);
-
-// Login/up command (default)
-program
-  .command('up [code]', { isDefault: true })
-  .alias('login')
-  .description('Mở Chrome theo mã người dùng (mặc định)')
-  .option('--dry-run', 'Chỉ in ra, không thực hiện')
-  .option('--root <path>', 'Đường dẫn thư mục gốc (mặc định: %LOCALAPPDATA%\\Swep)')
-  .action((code, options) => loginCommand(code, options));
-
-// Chrome command (re-open isolated Chrome)
-program
-  .command('chrome')
-  .alias('open')
-  .description('Mở lại cửa sổ Chrome của Swep (không ảnh hưởng Chrome của máy)')
-  .option('--root <path>', 'Đường dẫn thư mục gốc')
-  .action(chromeCommand);
-
-// Exit / Down command
-program
-  .command('exit')
-  .alias('down')
-  .description('Đóng Chrome, backup lên GitHub và dọn sạch toàn bộ Swep trên máy')
-  .option('--dry-run', 'Chỉ in ra, không thực hiện')
-  .option('--root <path>', 'Đường dẫn thư mục gốc')
-  .action(downCommand);
 
 // Recover command
 program
   .command('recover')
-  .description('Khôi phục khi mất mã (khóa khôi phục + GitHub)')
-  .option('--dry-run', 'Chỉ in ra, không thực hiện')
+  .description('Recover vault using Recovery Key')
+  .option('--dry-run', 'Print actions without executing')
   .action(recoverCommand);
 
 // Revoke command
 program
   .command('revoke')
-  .description('Kill switch: vô hiệu hóa toàn bộ mã hiện tại')
+  .description('Revoke active login codes')
   .action(revokeCommand);
 
 // Doctor command
 program
   .command('doctor')
-  .description('Kiểm tra điều kiện máy, không thay đổi gì')
-  .option('--root <path>', 'Đường dẫn thư mục gốc')
+  .description('Check system prerequisites')
+  .option('--root <path>', 'Workspace root directory')
   .action(doctorCommand);
 
 program.parse(process.argv);

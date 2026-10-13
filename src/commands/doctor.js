@@ -16,39 +16,36 @@ import { defaultGate } from '../gate.js';
 const execAsync = promisify(exec);
 
 export async function doctorCommand(options) {
-  printBanner();
-  console.log(chalk.bold.cyan('🔍 Bắt đầu kiểm tra điều kiện hệ thống (Doctor)... \n'));
-
   const checks = [];
 
-  // 1. Hệ điều hành
+  // 1. OS check
   const isWindows = process.platform === 'win32';
   const osRelease = os.release();
   checks.push({
-    title: 'Hệ điều hành Windows (10/11)',
+    title: 'Windows OS',
     ok: isWindows,
-    detail: isWindows ? `Windows build ${osRelease}` : `Phát hiện: ${process.platform} (Swep chỉ hỗ trợ Windows)`,
+    detail: isWindows ? `build ${osRelease}` : `detected ${process.platform} (Windows required)`,
   });
 
   // 2. Node.js version
   const nodeVersion = process.version;
   const major = parseInt(nodeVersion.replace(/^v/, '').split('.')[0], 10);
   checks.push({
-    title: 'Node.js Runtime (>= 18.0.0)',
+    title: 'Node.js runtime',
     ok: major >= 18,
-    detail: `${nodeVersion} (yêu cầu: >= 18.0.0)`,
+    detail: `${nodeVersion} (>= 18.0.0 required)`,
   });
 
-  // 3. Trình duyệt Google Chrome
+  // 3. Google Chrome
   const chromePath = await findChromePath();
   checks.push({
     title: 'Google Chrome',
     ok: !!chromePath,
-    detail: chromePath ? `Tìm thấy tại: ${chromePath}` : 'Chưa cài đặt (Swep sẽ tự cài qua winget nếu cần)',
+    detail: chromePath ? chromePath : 'not installed (will auto-install via winget)',
     warn: !chromePath,
   });
 
-  // 4. Winget (Windows Package Manager)
+  // 4. Winget
   let wingetOk = false;
   let wingetVer = '';
   try {
@@ -61,11 +58,11 @@ export async function doctorCommand(options) {
   checks.push({
     title: 'Windows Package Manager (winget)',
     ok: wingetOk,
-    detail: wingetOk ? `Phiên bản: ${wingetVer}` : 'Không tìm thấy winget trong PATH',
+    detail: wingetOk ? `v${wingetVer}` : 'not found in PATH',
     warn: !wingetOk,
   });
 
-  // 5. Quyền ghi vào thư mục gốc Swep
+  // 5. Write permissions
   const rootDir = getSwepRoot(options.root);
   let writeOk = false;
   try {
@@ -76,16 +73,16 @@ export async function doctorCommand(options) {
     fs.writeFileSync(testFile, 'test', 'utf8');
     fs.unlinkSync(testFile);
     writeOk = true;
-  } catch (err) {
+  } catch {
     writeOk = false;
   }
   checks.push({
-    title: 'Quyền ghi thư mục Swep (%LOCALAPPDATA%\\Swep)',
+    title: 'Workspace permissions',
     ok: writeOk,
     detail: rootDir,
   });
 
-  // 6. Kết nối mạng tới GitHub
+  // 6. GitHub connectivity
   let githubOk = false;
   try {
     const { stdout } = await execAsync('powershell -NoProfile -Command "Test-NetConnection -ComputerName api.github.com -Port 443 -InformationLevel Quiet"');
@@ -94,37 +91,30 @@ export async function doctorCommand(options) {
     githubOk = false;
   }
   checks.push({
-    title: 'Kết nối mạng tới GitHub API (port 443)',
+    title: 'GitHub API connectivity',
     ok: githubOk,
-    detail: githubOk ? 'Kết nối bình thường' : 'Không thể kết nối api.github.com',
+    detail: githubOk ? 'reachable' : 'unable to reach api.github.com',
   });
 
-  // 7. Kết nối tới Swep Gate
+  // 7. Swep Gate connectivity
   const gateOk = await defaultGate.healthCheck();
   checks.push({
-    title: `Kết nối tới Swep Gate (${defaultGate.baseUrl})`,
+    title: `Swep Gate (${defaultGate.baseUrl})`,
     ok: gateOk,
-    detail: gateOk ? 'Swep Gate đang phản hồi tốt' : 'Không kết nối được Swep Gate (chạy mock/local hoặc kiểm tra mạng)',
+    detail: gateOk ? 'reachable' : 'unreachable',
     warn: !gateOk,
   });
 
-  // In kết quả
   let allPass = true;
   for (const c of checks) {
-    if (c.ok) {
-      console.log(`${chalk.green('✔')} ${chalk.bold(c.title)}: ${chalk.dim(c.detail)}`);
-    } else if (c.warn) {
-      console.log(`${chalk.yellow('⚠')} ${chalk.bold(c.title)}: ${chalk.yellow(c.detail)}`);
-    } else {
-      console.log(`${chalk.red('✖')} ${chalk.bold(c.title)}: ${chalk.red(c.detail)}`);
-      allPass = false;
-    }
+    const tag = c.ok ? '[ok]  ' : (c.warn ? '[warn]' : '[fail]');
+    console.log(`${tag} ${c.title}: ${c.detail}`);
+    if (!c.ok && !c.warn) allPass = false;
   }
 
-  console.log();
   if (allPass) {
-    console.log(chalk.green.bold('🎉 Mọi kiểm tra cơ bản đều đạt! Máy tính của bạn đã sẵn sàng sử dụng Swep.'));
+    console.log('System check passed.');
   } else {
-    console.log(chalk.yellow.bold('⚠ Có một số mục cần lưu ý trước khi chạy swep.'));
+    console.log('System check completed with errors.');
   }
 }

@@ -128,17 +128,17 @@ export async function downCommand(options = {}) {
     }
   }
 
-  // 4. Dọn dẹp máy tính sạch sẽ 100%
+  // 4. Clean up workspace
   try {
     await performCleanup(rootDir, { dryRun: !!options.dryRun });
     removeActiveSession(rootDir);
 
     if (options.dryRun) {
-      console.log(chalkCol.yellow('✔ [dry-run] Đã mô phỏng quá trình dọn dẹp Swep.'));
+      console.log('[dry-run] Workspace cleanup simulated.');
     } else {
-      console.log(chalkCol.bold.green('✔ Đã sao lưu dữ liệu lên GitHub và xóa sạch hoàn toàn Swep trên máy tính.'));
+      console.log('Workspace saved and removed.');
     }
   } catch (err) {
-    console.error(chalkCol.red(`Lỗi trong quá trình dọn dẹp: ${err.message}`));
+    console.error(`error: cleanup failed: ${err.message}`);
   }
 }
