@@ -8,6 +8,7 @@ import chalk from 'chalk';
 import fs from 'fs';
 import path from 'path';
 import { getSwepRoot, openSwepChrome } from '../chrome.js';
+import { readActiveSession } from '../bridge.js';
 
 export async function chromeCommand(options = {}) {
   const rootDir = getSwepRoot(options.root);
@@ -19,8 +20,11 @@ export async function chromeCommand(options = {}) {
     return;
   }
 
+  const activeSession = readActiveSession(rootDir);
+  const cdpPort = activeSession?.cdpPort || 0;
+
   try {
-    const opened = await openSwepChrome(rootDir);
+    const opened = await openSwepChrome(rootDir, 'https://myaccount.google.com', cdpPort);
     if (opened) {
       console.log(chalk.green.bold('✔ Đã mở lại cửa sổ Chrome chứa profile cô lập của Swep!'));
       console.log(chalk.dim('Profile này độc lập 100% với Chrome cá nhân của chủ máy.\n'));

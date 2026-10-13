@@ -1,9 +1,11 @@
 /**
  * Command: login / up (default command)
  * Đăng nhập bằng mã: Tải vault từ GitHub của user (Zero-Server Architecture),
- * giải mã, tự động nạp Session Capsule (nếu đã có) và mở Chrome với profile cô lập
+ * giải mã, tự động nạp Session Capsule qua CDP (nếu đã có) và mở Chrome với profile cô lập
  */
 
+import fs from 'fs';
+import path from 'path';
 import chalk from 'chalk';
 import {
   printBanner,
@@ -28,13 +30,15 @@ import {
   launchIsolatedChrome,
   openSwepChrome,
   getSwepRoot,
-  autoFillGoogleLogin,
 } from '../chrome.js';
 import {
-  startBridge,
-  prepareExtensionDir,
   saveActiveSession,
 } from '../bridge.js';
+import {
+  getFreePort,
+  injectCookiesViaCDP,
+  getCookiesViaCDP,
+} from '../cdp.js';
 import {
   takeBeforeSnapshot,
   recordLedger,
@@ -141,14 +145,13 @@ export async function loginCommand(options = {}) {
     chromeExe,
   });
 
-  // 5. Khởi động Session Bridge và chuẩn bị Extension
+  // 5. Chuẩn bị kết nối CDP
   const initialCookies = (userPayload.session && Array.isArray(userPayload.session.cookies))
     ? userPayload.session.cookies
     : [];
 
-  const bridge = await startBridge(initialCookies, rootDir);
+  const cdpPort = await getFreePort();
   const targetUrl = initialCookies.length ? 'https://myaccount.google.com' : 'https://accounts.google.com';
-  const extensionDir = prepareExtensionDir(rootDir, bridge.port, targetUrl);
 
   // Lưu trạng thái phiên đang hoạt động vào active-session.json
   saveActiveSession(rootDir, {
@@ -158,58 +161,54 @@ export async function loginCommand(options = {}) {
     dek: dekBuffer.toString('hex'),
     wrap_code: vaultData.wrap_code,
     wrap_recovery: vaultData.wrap_recovery,
-    port: bridge.port,
+    cdpPort,
     userPayload,
   });
 
-  // 6. Mở Chrome với Profile cô lập + Extension
+  // 6. Mở Chrome với Profile cô lập + CDP Port
   console.log(chalk.green('\n✔ Đang mở Chrome với profile tạm thời của Swep...'));
-  await launchIsolatedChrome(chromeExe, rootDir, targetUrl, extensionDir);
+  await launchIsolatedChrome(chromeExe, rootDir, targetUrl, cdpPort);
 
   if (initialCookies.length > 0) {
-    // ĐÃ CÓ PHIÊN (Từ lần thứ hai trở đi)
-    const spinCapsule = createSpinner(`Đang bung Session Capsule (${initialCookies.length} cookies) vào Chrome...`);
-    const injected = await bridge.waitForInjection(7000);
-    if (injected) {
+    // ĐÃ CÓ PHIÊN: Bơm trực tiếp vào RAM Chrome qua CDP
+    const spinCapsule = createSpinner(`Đang bung Session Capsule (${initialCookies.length} cookies) vào Chrome qua CDP...`);
+    try {
+      await injectCookiesViaCDP(cdpPort, initialCookies);
       spinCapsule.succeed(chalk.bold.green(`✔ Chrome đã tự bung phiên đăng nhập thành công! (Không cần đăng nhập lại)`));
-    } else {
-      spinCapsule.warn(chalk.yellow('Đang mở Chrome (nếu phiên chưa tự nhận diện, bạn có thể kiểm tra lại).'));
+    } catch (err) {
+      spinCapsule.warn(chalk.yellow(`Không thể bung cookies qua CDP: ${err.message}`));
     }
   } else {
     // LẦN ĐẦU TIÊN: Hướng dẫn người dùng đăng nhập
     console.log(chalk.bold.yellow('\n📝 LẦN ĐẦU SỬ DỤNG:'));
     console.log(chalk.white('   Hãy đăng nhập tài khoản Google trên cửa sổ Chrome vừa mở.'));
     console.log(chalk.dim('   (Khi bạn xong việc và gõ "swep down", Swep sẽ tự lưu phiên này để từ lần sau KHÔNG CẦN ĐĂNG NHẬP LẠI NỮA!)\n'));
-
-    // Thử hỗ trợ tự động điền nếu có sẵn thông tin
-    if (userPayload.google_email && userPayload.google_password) {
-      const spinAuto = createSpinner('⚡ Đang tự động hỗ trợ điền Email & Mật khẩu vào Chrome...');
-      const filled = await autoFillGoogleLogin(
-        userPayload.google_email,
-        userPayload.google_password,
-        userPayload.totp_secret,
-        (msg) => {
-          spinAuto.text = msg;
-        }
-      );
-      if (filled) {
-        spinAuto.succeed(chalk.green('Đã tự động gửi thông tin đăng nhập Google!'));
-      } else {
-        spinAuto.info(chalk.dim('Bạn có thể tự nhập mật khẩu trên Chrome nếu cần.'));
-      }
-    }
   }
 
-  // 7. Bật Màn hình điều khiển phiên trực tiếp (Live Session Dashboard & 2FA Ticker)
+  // 7. Đồng bộ cookies định kỳ mỗi 5 giây qua CDP
+  let latestCookiesCache = initialCookies;
+  const cookiePollInterval = setInterval(async () => {
+    try {
+      const c = await getCookiesViaCDP(cdpPort);
+      if (Array.isArray(c) && c.length) {
+        latestCookiesCache = c;
+        fs.writeFileSync(path.join(rootDir, 'latest-cookies.json'), JSON.stringify(c, null, 2), 'utf8');
+      }
+    } catch {
+      // ignore
+    }
+  }, 5000);
+
+  // 8. Bật Màn hình điều khiển phiên trực tiếp (Live Session Dashboard & 2FA Ticker)
   await startLiveSessionDashboard({
     email: userPayload.google_email || `@${handle}`,
     totpSecret: userPayload.totp_secret || '',
-    getLatestCookies: bridge.getLatestCookies,
+    getLatestCookies: () => latestCookiesCache,
     onOpenChrome: async () => {
-      await openSwepChrome(rootDir, targetUrl);
+      await openSwepChrome(rootDir, targetUrl, cdpPort);
     },
     onDone: async () => {
-      await bridge.close();
+      clearInterval(cookiePollInterval);
       await downCommand(options);
     },
   });

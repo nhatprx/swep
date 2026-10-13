@@ -1,13 +1,12 @@
 /**
  * Command: down
  * Dọn sạch môi trường làm việc khi hoàn tất công việc:
- * 1. Tự động thu thập cookies/tokens mới nhất, mã hóa và đẩy lên GitHub swep-vault
+ * 1. Tự động thu thập cookies/tokens mới nhất qua CDP, mã hóa và đẩy lên GitHub swep-vault
  * 2. Đóng Chrome của Swep, xóa profile, xóa logs, gỡ app nếu do Swep cài, in báo cáo
  */
 
 import fs from 'fs';
 import path from 'path';
-import axios from 'axios';
 import chalkCol from 'chalk';
 import { printBanner, printBox, createSpinner } from '../ui.js';
 import { getSwepRoot } from '../chrome.js';
@@ -15,6 +14,7 @@ import { performCleanup } from '../cleanup.js';
 import { readActiveSession, removeActiveSession } from '../bridge.js';
 import { uploadVaultToGitHub } from '../vault.js';
 import { aead_encrypt } from '../crypto.js';
+import { getCookiesViaCDP } from '../cdp.js';
 
 export async function downCommand(options = {}) {
   printBanner();
@@ -33,19 +33,19 @@ export async function downCommand(options = {}) {
     try {
       let latestCookies = [];
 
-      // Hỏi Bridge lấy cookies mới nhất
-      if (activeSession.port) {
+      // Ưu tiên 1: Lấy trực tiếp từ Chrome qua CDP (thời gian thực chính xác 100%)
+      if (activeSession.cdpPort) {
         try {
-          const res = await axios.get(`http://127.0.0.1:${activeSession.port}/latest`, { timeout: 3000 });
-          if (Array.isArray(res.data?.cookies) && res.data.cookies.length) {
-            latestCookies = res.data.cookies;
+          const cdpCookies = await getCookiesViaCDP(activeSession.cdpPort);
+          if (Array.isArray(cdpCookies) && cdpCookies.length > 0) {
+            latestCookies = cdpCookies;
           }
         } catch {
-          // Bridge có thể đã dừng nếu tiến trình chính bị tắt
+          // Chrome có thể đã đóng trước
         }
       }
 
-      // Nếu Bridge không trả về, thử đọc file backup latest-cookies.json
+      // Ưu tiên 2: Đọc từ file latest-cookies.json đã sao lưu định kỳ
       if (latestCookies.length === 0) {
         const backupFile = path.join(rootDir, 'latest-cookies.json');
         if (fs.existsSync(backupFile)) {

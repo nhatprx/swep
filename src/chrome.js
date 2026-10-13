@@ -77,10 +77,10 @@ export async function installChromeViaWinget() {
  * @param {string} chromeExe
  * @param {string} rootDir
  * @param {string} [targetUrl]
- * @param {string} [extensionDir]
+ * @param {number} [cdpPort]
  * @returns {Promise<import('child_process').ChildProcess>}
  */
-export async function launchIsolatedChrome(chromeExe, rootDir, targetUrl = 'https://accounts.google.com', extensionDir = '') {
+export async function launchIsolatedChrome(chromeExe, rootDir, targetUrl = 'https://accounts.google.com', cdpPort = 0) {
   const profileDir = path.join(rootDir, 'chrome-profile');
   if (!fs.existsSync(profileDir)) {
     fs.mkdirSync(profileDir, { recursive: true });
@@ -92,9 +92,8 @@ export async function launchIsolatedChrome(chromeExe, rootDir, targetUrl = 'http
     '--no-default-browser-check',
   ];
 
-  if (extensionDir && fs.existsSync(extensionDir)) {
-    args.push(`--load-extension=${extensionDir}`);
-    args.push(`--disable-extensions-except=${extensionDir}`);
+  if (cdpPort) {
+    args.push(`--remote-debugging-port=${cdpPort}`);
   }
 
   args.push(targetUrl);
@@ -112,9 +111,10 @@ export async function launchIsolatedChrome(chromeExe, rootDir, targetUrl = 'http
  * Mở lại cửa sổ Chrome của Swep với profile cô lập
  * @param {string} rootDir
  * @param {string} [targetUrl]
+ * @param {number} [cdpPort]
  * @returns {Promise<boolean>}
  */
-export async function openSwepChrome(rootDir, targetUrl = 'https://myaccount.google.com') {
+export async function openSwepChrome(rootDir, targetUrl = 'https://myaccount.google.com', cdpPort = 0) {
   const chromeExe = await findChromePath();
   if (!chromeExe) {
     throw new Error('Không tìm thấy Google Chrome trên máy.');
@@ -123,8 +123,7 @@ export async function openSwepChrome(rootDir, targetUrl = 'https://myaccount.goo
   if (!fs.existsSync(profileDir)) {
     return false;
   }
-  const extensionDir = path.join(rootDir, 'extension');
-  await launchIsolatedChrome(chromeExe, rootDir, targetUrl, extensionDir);
+  await launchIsolatedChrome(chromeExe, rootDir, targetUrl, cdpPort);
   return true;
 }
 
