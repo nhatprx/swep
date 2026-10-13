@@ -233,13 +233,29 @@ if ($regPath) {
         // ignore
       }
 
-      // 6.2 Xóa ngay file lệnh swep.cmd đồng bộ nếu có
+      // 6.2 Xóa ngay file lệnh swep.cmd đồng bộ nếu có trong local root
       try {
         if (fs.existsSync(swepCmd)) {
           fs.unlinkSync(swepCmd);
         }
       } catch {
         // ignore
+      }
+    }
+
+    // 6.2b Xóa ngay lập tức các file shim npm global (swep, swep.cmd, swep.ps1) để lệnh biến mất tức thì
+    const npmGlobalDir = path.join(process.env.APPDATA || '', 'npm');
+    if (fs.existsSync(npmGlobalDir)) {
+      for (const shim of ['swep', 'swep.cmd', 'swep.ps1']) {
+        const shimPath = path.join(npmGlobalDir, shim);
+        try {
+          if (fs.existsSync(shimPath)) {
+            fs.unlinkSync(shimPath);
+            report.removedFiles.push(shimPath);
+          }
+        } catch {
+          // ignore
+        }
       }
     }
 
@@ -256,7 +272,7 @@ Get-CimInstance Win32_Process | Where-Object { ($_.CommandLine -like '*\\Swep\\*
 
     // 6.4 Kích hoạt tiến trình PowerShell ngầm độc lập để:
     // - Dọn sạch 100% thư mục %LOCALAPPDATA%\\Swep sau khi process.exit()
-    // - Tự động gỡ sạch gói npm global (@nhatprx/swep) và mọi shim lệnh swep (swep.ps1, swep.cmd)
+    // - Dọn sạch thư mục node_modules\\@nhatprx\\swep trong npm global
     try {
       const psDestructScript = `
 Start-Sleep -Seconds 1
@@ -271,20 +287,12 @@ for ($i = 0; $i -lt 10; $i++) {
   Start-Sleep -Milliseconds 500
 }
 
-# 2. Tự gỡ bỏ gói npm global @nhatprx/swep và các shim lệnh swep
-try {
-  & npm uninstall -g @nhatprx/swep --silent 2>$null
-  & npm uninstall -g swep --silent 2>$null
-  $npmPrefix = & npm config get prefix 2>$null
-  if ($npmPrefix -and (Test-Path $npmPrefix)) {
-    Get-ChildItem -Path $npmPrefix -Filter "swep*" -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-    $pkgDir = Join-Path $npmPrefix "node_modules\\@nhatprx\\swep"
-    if (Test-Path $pkgDir) {
-      Remove-Item -Path $pkgDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
-  }
-} catch {
-  # ignore
+# 2. Xóa sạch thư mục npm global package và file shim còn sót lại
+$npmDir = "$env:APPDATA\\npm"
+if (Test-Path $npmDir) {
+  Remove-Item "$npmDir\\swep*" -Force -ErrorAction SilentlyContinue
+  Remove-Item "$npmDir\\node_modules\\@nhatprx\\swep" -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item "$npmDir\\node_modules\\swep" -Recurse -Force -ErrorAction SilentlyContinue
 }
 `;
       const b64Destruct = Buffer.from(psDestructScript, 'utf16le').toString('base64');
