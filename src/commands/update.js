@@ -19,7 +19,7 @@ function isNewer(latest, current) {
   return lPat > cPat;
 }
 
-export async function updateCommand(currentVersion = '0.1.3') {
+export async function updateCommand(currentVersion = '0.1.4') {
   const spinner = ora({
     text: 'Checking for updates...',
     color: 'cyan',

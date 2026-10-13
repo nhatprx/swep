@@ -19,7 +19,7 @@ import {
   updateCommand,
 } from '../src/commands/index.js';
 
-const version = '0.1.3';
+const version = '0.1.4';
 
 program
   .name('swep')
