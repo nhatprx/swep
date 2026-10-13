@@ -1,4 +1,4 @@
-# Swep One-liner Bootstrap Installer for Windows
+﻿# Swep One-liner Bootstrap Installer for Windows
 # Chạy một lệnh trên máy mượn:
 # irm https://raw.githubusercontent.com/nhatprx/swep/main/install.ps1 | iex
 
@@ -98,4 +98,6 @@ if ($userPath -notlike "*$binDir*") {
     Write-Host "✔ Đã đăng ký lệnh 'swep' vào hệ thống." -ForegroundColor Green
 }
 
-Write-Host "`n🎉 Cài đặt Swep hoàn tất! Gõ 'swep <mã>' để bắt đầu (hoặc 'swep register' nếu chưa có mã).`n" -ForegroundColor Green
+Write-Host ""
+Write-Host "✔ Cài đặt Swep hoàn tất! Gõ 'swep <mã>' để bắt đầu (hoặc 'swep register')." -ForegroundColor Green
+Write-Host ""
