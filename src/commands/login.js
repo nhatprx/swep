@@ -22,6 +22,7 @@ import {
   launchIsolatedChrome,
   getSwepRoot,
   copyToClipboardWithAutoClear,
+  autoFillGoogleLogin,
 } from '../chrome.js';
 import {
   takeBeforeSnapshot,
@@ -150,7 +151,15 @@ export async function loginCommand(options) {
   console.log(chalk.green('\n✔ Đang mở Chrome với profile tạm thời của Swep...'));
   await launchIsolatedChrome(chromeExe, rootDir, 'https://accounts.google.com');
 
-  console.log(chalk.green.bold('✔ Sẵn sàng làm việc!'));
-  console.log(chalk.dim('\nKhi hoàn thành công việc, hãy mở terminal và chạy:'));
+  const spinAuto = createSpinner('⚡ Đang tự động điền Email & Mật khẩu vào Chrome (vui lòng không bấm chuột ra ngoài)...');
+  const filled = await autoFillGoogleLogin(userPayload.google_email, userPayload.google_password, currentTotp);
+  if (filled) {
+    spinAuto.succeed(chalk.green('Đã tự động gửi thông tin đăng nhập Google thành công!'));
+  } else {
+    spinAuto.info(chalk.yellow('Đã chuẩn bị thông tin (bạn có thể bấm Ctrl+V để dán mật khẩu nếu cần).'));
+  }
+
+  console.log(chalk.green.bold('\n✔ Sẵn sàng làm việc!'));
+  console.log(chalk.dim('Khi hoàn thành công việc, hãy mở terminal và chạy:'));
   console.log(chalk.bold.cyan('  swep down\n'));
 }

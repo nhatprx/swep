@@ -194,3 +194,73 @@ export async function getClipboardText() {
     return '';
   }
 }
+
+/**
+ * Tự động điền email, mật khẩu và mã 2FA vào trang Google trên Chrome
+ * Sử dụng SendKeys và Clipboard an toàn để không bị Google chặn bot
+ * @param {string} email
+ * @param {string} password
+ * @param {string} [totp]
+ * @param {(step: string) => void} [onProgress]
+ * @returns {Promise<boolean>}
+ */
+export async function autoFillGoogleLogin(email, password, totp = '', onProgress = () => {}) {
+  const tempScriptPath = path.join(process.env.TEMP || 'C:\\Temp', `swep-autofill-${Date.now()}.ps1`);
+  const escapedEmail = (email || '').replace(/"/g, '`"');
+  const escapedPassword = (password || '').replace(/"/g, '`"').replace(/\$/g, '`$');
+  const escapedTotp = (totp || '').replace(/"/g, '`"');
+
+  const psScript = `
+Add-Type -AssemblyName System.Windows.Forms
+$wshell = New-Object -ComObject wscript.shell
+
+function Send-Paste {
+    param([string]$Text)
+    Set-Clipboard -Value $Text
+    Start-Sleep -Milliseconds 300
+    [System.Windows.Forms.SendKeys]::SendWait('^v')
+    Start-Sleep -Milliseconds 400
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+}
+
+# 1. Chờ Chrome mở và tải trang đăng nhập Google
+Start-Sleep -Seconds 4
+
+# Kích hoạt cửa sổ Chrome
+$wshell.AppActivate('Google')
+$wshell.AppActivate('Chrome')
+Start-Sleep -Milliseconds 800
+
+# 2. Điền Email
+Send-Paste -Text "${escapedEmail}"
+
+# 3. Chờ Google chuyển sang trang mật khẩu
+Start-Sleep -Seconds 3
+Send-Paste -Text "${escapedPassword}"
+
+# 4. Điền mã 2FA TOTP nếu có
+if ("${escapedTotp}") {
+    Start-Sleep -Seconds 3
+    Send-Paste -Text "${escapedTotp}"
+}
+
+# 5. Xóa sạch mật khẩu khỏi clipboard sau khi đăng nhập
+Start-Sleep -Seconds 1
+Set-Clipboard -Value ""
+`;
+
+  try {
+    onProgress('Đang chờ trang đăng nhập Google tải (4s)...');
+    fs.writeFileSync(tempScriptPath, psScript, 'utf8');
+    await execAsync(`powershell -NoProfile -ExecutionPolicy Bypass -File "${tempScriptPath}"`);
+    fs.unlinkSync(tempScriptPath);
+    return true;
+  } catch {
+    try {
+      if (fs.existsSync(tempScriptPath)) fs.unlinkSync(tempScriptPath);
+    } catch {
+      // ignore
+    }
+    return false;
+  }
+}
