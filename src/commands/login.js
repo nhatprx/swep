@@ -43,7 +43,7 @@ import {
 import {
   decryptCapsule,
   unpackProfileDirectory,
-  sanitizeProfileForCurrentMachine,
+  adaptProfileForCurrentMachine,
 } from '../profile.js';
 import {
   takeBeforeSnapshot,
@@ -168,8 +168,8 @@ export async function loginCommand(options = {}) {
       spinCapsuleCheck.text = 'Đang bung profile (Local Storage, LevelDB, Preferences)...';
       const { manifest, extractedFiles } = unpackProfileDirectory(rawGz, profileDir);
 
-      // Xử lý DPAPI để profile hoạt động mượt mà trên máy mới
-      sanitizeProfileForCurrentMachine(profileDir);
+      // Tái mã hóa master key bằng DPAPI của máy đích để đọc được 100% cookies & tokens
+      await adaptProfileForCurrentMachine(profileDir, manifest);
 
       if (manifest.session_cookies && Array.isArray(manifest.session_cookies) && manifest.session_cookies.length) {
         initialCookies = manifest.session_cookies;

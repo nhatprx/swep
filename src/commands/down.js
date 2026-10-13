@@ -100,7 +100,7 @@ export async function downCommand(options = {}) {
       };
 
       // Đóng gói toàn bộ profile (đã tự động lọc bỏ cache rác)
-      const gzArchive = packProfileDirectory(profileDir, metadata);
+      const gzArchive = await packProfileDirectory(profileDir, metadata);
       const dek = Buffer.from(activeSession.dek, 'hex');
       // Mã hóa AEAD ChaCha20-Poly1305 với chữ ký xác thực toàn vẹn
       const encryptedCapsule = encryptCapsule(gzArchive, dek, `${activeSession.handle}/capsule/v2`);

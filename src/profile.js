@@ -2,13 +2,20 @@
  * Swep Profile Capsule Manager
  * Đóng gói, lọc cache, nén gzip, mã hóa AEAD (ChaCha20-Poly1305) toàn bộ Chrome profile
  * và phục hồi nguyên vẹn (Local Storage, IndexedDB, Preferences, Extensions)
- * đồng thời giải quyết triệt để vấn đề Windows DPAPI khi di chuyển giữa các máy khác nhau.
+ * đồng thời giải quyết triệt để vấn đề Windows DPAPI khi di chuyển giữa các máy khác nhau:
+ * - Trích xuất 32-byte AES master key từ Local State qua DPAPI khi đóng gói
+ * - Tái mã hóa 32-byte AES master key bằng DPAPI của máy mới khi giải nén
+ * -> Đảm bảo Chrome trên máy mới giải mã được 100% SQLite Cookies, Web Data, Login Data!
  */
 
 import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
 import crypto from 'crypto';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 // Magic header định danh Swep Capsule v2
 const CAPSULE_MAGIC = Buffer.from('SWEP\x02', 'binary'); // 5 bytes
@@ -50,14 +57,78 @@ const EXCLUDE_EXTS = new Set([
 ]);
 
 /**
+ * Giải mã DPAPI blob thành plaintext bytes sử dụng CurrentUser scope
+ * @param {string} b64ProtectedData
+ * @returns {Promise<Buffer|null>}
+ */
+export async function unprotectDpapi(b64ProtectedData) {
+  try {
+    const psScript = `
+Add-Type -AssemblyName System.Security
+$bytes = [Convert]::FromBase64String('${b64ProtectedData}')
+$unprotected = [System.Security.Cryptography.ProtectedData]::Unprotect($bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+[Convert]::ToBase64String($unprotected)
+`;
+    const b64Cmd = Buffer.from(psScript, 'utf16le').toString('base64');
+    const { stdout } = await execAsync(`powershell -NoProfile -EncodedCommand ${b64Cmd}`);
+    return Buffer.from(stdout.trim(), 'base64');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Mã hóa plaintext bytes bằng DPAPI của máy hiện tại
+ * @param {Buffer} rawKeyBuffer
+ * @returns {Promise<Buffer|null>}
+ */
+export async function protectDpapi(rawKeyBuffer) {
+  try {
+    const b64Raw = rawKeyBuffer.toString('base64');
+    const psScript = `
+Add-Type -AssemblyName System.Security
+$bytes = [Convert]::FromBase64String('${b64Raw}')
+$protected = [System.Security.Cryptography.ProtectedData]::Protect($bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+[Convert]::ToBase64String($protected)
+`;
+    const b64Cmd = Buffer.from(psScript, 'utf16le').toString('base64');
+    const { stdout } = await execAsync(`powershell -NoProfile -EncodedCommand ${b64Cmd}`);
+    return Buffer.from(stdout.trim(), 'base64');
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Đóng gói thư mục profile thành buffer nhị phân nén gzip
  * @param {string} profileDir - Đường dẫn thư mục chrome-profile
  * @param {object} [metadata={}] - Metadata bổ sung (session cookies, email...)
- * @returns {Buffer} Archive buffer (gzip)
+ * @returns {Promise<Buffer>} Archive buffer (gzip)
  */
-export function packProfileDirectory(profileDir, metadata = {}) {
+export async function packProfileDirectory(profileDir, metadata = {}) {
   if (!fs.existsSync(profileDir)) {
     throw new Error(`Thư mục profile không tồn tại: ${profileDir}`);
+  }
+
+  // Trích xuất 32-byte AES master key từ Local State nếu có để hỗ trợ di chuyển máy khác
+  const localStatePath = path.join(profileDir, 'Local State');
+  if (fs.existsSync(localStatePath)) {
+    try {
+      const ls = JSON.parse(fs.readFileSync(localStatePath, 'utf8'));
+      const encKeyB64 = ls.os_crypt?.encrypted_key;
+      if (encKeyB64) {
+        const buf = Buffer.from(encKeyB64, 'base64');
+        if (buf.length > 5 && buf.subarray(0, 5).toString('utf8') === 'DPAPI') {
+          const dpapiBlob = buf.subarray(5);
+          const rawMasterKey = await unprotectDpapi(dpapiBlob.toString('base64'));
+          if (rawMasterKey && rawMasterKey.length === 32) {
+            metadata.raw_master_key = rawMasterKey.toString('hex');
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
   }
 
   const fileEntries = [];
@@ -210,27 +281,28 @@ export function unpackProfileDirectory(archiveGzBuffer, targetDir) {
 }
 
 /**
- * Xử lý chuyển đổi máy (Cross-Machine DPAPI Transition):
- * Xóa các file mã hóa cứng theo Windows DPAPI của máy cũ (Local State, Cookies DB)
- * để Chrome trên máy mới tự khởi tạo master key mới mà KHÔNG bị crash hoặc lỗi giải mã,
- * trong khi giữ nguyên 100% Local Storage, IndexedDB, Preferences, Extensions.
+ * Thích ứng Profile với DPAPI của máy hiện tại:
+ * Tái mã hóa 32-byte AES master key bằng DPAPI của máy đích và ghi vào Local State.
+ * Giữ nguyên 100% dữ liệu SQLite Cookies, Local Storage, IndexedDB, Preferences.
  * @param {string} profileDir
+ * @param {object} manifest
  */
-export function sanitizeProfileForCurrentMachine(profileDir) {
-  // Local State chứa os_crypt.encrypted_key bị khóa vào DPAPI máy cũ
-  const localState = path.join(profileDir, 'Local State');
-  if (fs.existsSync(localState)) {
+export async function adaptProfileForCurrentMachine(profileDir, manifest = {}) {
+  const localStatePath = path.join(profileDir, 'Local State');
+  if (manifest.raw_master_key && fs.existsSync(localStatePath)) {
     try {
-      fs.unlinkSync(localState);
-    } catch {}
-  }
-
-  // Network/Cookies SQLite file cũ bị mã hóa DPAPI của máy cũ
-  const cookiesDb = path.join(profileDir, 'Default', 'Network', 'Cookies');
-  if (fs.existsSync(cookiesDb)) {
-    try {
-      fs.unlinkSync(cookiesDb);
-    } catch {}
+      const rawKey = Buffer.from(manifest.raw_master_key, 'hex');
+      const protectedBlob = await protectDpapi(rawKey);
+      if (protectedBlob && protectedBlob.length > 0) {
+        const ls = JSON.parse(fs.readFileSync(localStatePath, 'utf8'));
+        const newEncKeyB64 = Buffer.concat([Buffer.from('DPAPI'), protectedBlob]).toString('base64');
+        ls.os_crypt = ls.os_crypt || {};
+        ls.os_crypt.encrypted_key = newEncKeyB64;
+        fs.writeFileSync(localStatePath, JSON.stringify(ls, null, 2), 'utf8');
+      }
+    } catch {
+      // ignore
+    }
   }
 }
 

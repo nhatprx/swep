@@ -9,10 +9,10 @@ import {
   unpackProfileDirectory,
   encryptCapsule,
   decryptCapsule,
-  sanitizeProfileForCurrentMachine,
+  adaptProfileForCurrentMachine,
 } from '../src/profile.js';
 
-test('profile: pack and unpack directory preserving structure and metadata', () => {
+test('profile: pack and unpack directory preserving structure and metadata', async () => {
   const tmpDir = path.join(os.tmpdir(), 'swep-profile-test-' + Date.now());
   const unpackDir = path.join(os.tmpdir(), 'swep-profile-unpack-' + Date.now());
   
@@ -25,7 +25,7 @@ test('profile: pack and unpack directory preserving structure and metadata', () 
   fs.writeFileSync(path.join(tmpDir, 'Default', 'Cache', 'data_0'), 'cached-data', 'utf8');
 
   const meta = { google_email: 'test@gmail.com', test: 123 };
-  const packedGz = packProfileDirectory(tmpDir, meta);
+  const packedGz = await packProfileDirectory(tmpDir, meta);
   assert.ok(packedGz.length > 0);
 
   const { manifest, extractedFiles } = unpackProfileDirectory(packedGz, unpackDir);
@@ -65,19 +65,23 @@ test('profile: AEAD ChaCha20-Poly1305 encryption, decryption, and integrity veri
   }, /Xác thực tính toàn vẹn capsule thất bại/);
 });
 
-test('profile: sanitizeProfileForCurrentMachine removes DPAPI locked files', () => {
+test('profile: adaptProfileForCurrentMachine adapts master key into Local State', async () => {
   const tmpDir = path.join(os.tmpdir(), 'swep-dpapi-test-' + Date.now());
-  fs.mkdirSync(path.join(tmpDir, 'Default', 'Network'), { recursive: true });
+  fs.mkdirSync(tmpDir, { recursive: true });
   
-  fs.writeFileSync(path.join(tmpDir, 'Local State'), 'dpapi-key', 'utf8');
-  fs.writeFileSync(path.join(tmpDir, 'Default', 'Network', 'Cookies'), 'dpapi-cookies', 'utf8');
-  fs.writeFileSync(path.join(tmpDir, 'Default', 'Preferences'), 'prefs', 'utf8');
+  const rawKeyHex = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+  fs.writeFileSync(path.join(tmpDir, 'Local State'), JSON.stringify({
+    os_crypt: { encrypted_key: 'old_key' }
+  }), 'utf8');
 
-  sanitizeProfileForCurrentMachine(tmpDir);
+  await adaptProfileForCurrentMachine(tmpDir, { raw_master_key: rawKeyHex });
 
-  assert.ok(!fs.existsSync(path.join(tmpDir, 'Local State')));
-  assert.ok(!fs.existsSync(path.join(tmpDir, 'Default', 'Network', 'Cookies')));
-  assert.ok(fs.existsSync(path.join(tmpDir, 'Default', 'Preferences')));
+  const updatedLs = JSON.parse(fs.readFileSync(path.join(tmpDir, 'Local State'), 'utf8'));
+  assert.ok(updatedLs.os_crypt.encrypted_key);
+  assert.notEqual(updatedLs.os_crypt.encrypted_key, 'old_key');
+  // Check that key starts with DPAPI prefix
+  const buf = Buffer.from(updatedLs.os_crypt.encrypted_key, 'base64');
+  assert.equal(buf.subarray(0, 5).toString('utf8'), 'DPAPI');
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
