@@ -13,7 +13,6 @@ import {
   ensureVaultRepo,
   uploadVaultToGitHub,
   checkVaultRepoExists,
-  findNextVaultRepoName,
 } from '../vault.js';
 import {
   generateDEK,
@@ -80,20 +79,21 @@ export async function registerCommand(options) {
   }
 
   // Check if repository already exists on GitHub
-  let targetRepo = 'swep-vault';
-  const repoExists = await checkVaultRepoExists(cleanToken, handle, 'swep-vault');
+  const targetRepo = 'swep-vault';
+  const repoExists = await checkVaultRepoExists(cleanToken, handle, targetRepo);
 
   if (repoExists) {
     console.log();
     console.log(chalk.yellow(`Repository 'swep-vault' already exists on https://github.com/${handle}/swep-vault`));
     const overwrite = await promptConfirm('Do you want to overwrite the existing vault?', false);
 
-    if (overwrite) {
-      targetRepo = 'swep-vault';
-    } else {
-      const suggestedName = await findNextVaultRepoName(cleanToken, handle, 'swep-vault');
-      const enteredName = await prompt('Enter new repository name', suggestedName);
-      targetRepo = enteredName.trim() || suggestedName;
+    if (!overwrite) {
+      console.log();
+      console.log(chalk.yellow('Registration aborted to prevent cryptographic and data conflicts.'));
+      console.log('Please delete or rename your existing repository on GitHub:');
+      console.log(chalk.cyan(`  https://github.com/${handle}/swep-vault/settings`));
+      console.log("Then run 'swep register' again to create a clean vault.\n");
+      return;
     }
   }
 
