@@ -1,11 +1,13 @@
 /**
- * Command: recover
- * Khôi phục khi mất mã đăng nhập (sử dụng Khóa khôi phục + GitHub Device Flow)
+ * Command: recover (Zero-Server GitHub Architecture)
+ * Khôi phục quyền truy cập vault khi mất mã đăng nhập bằng Recovery Key
  */
 
+import crypto from 'crypto';
 import chalk from 'chalk';
-import { printBanner, printBox, prompt, promptSecret, createSpinner } from '../ui.js';
-import { startDeviceFlow, pollForToken, getGitHubUser } from '../github.js';
+import ora from 'ora';
+import { prompt, promptSecret } from '../ui.js';
+import { fetchVault, uploadVaultToGitHub } from '../vault.js';
 import {
   generateCode,
   normalizeCode,
@@ -14,74 +16,94 @@ import {
   aead_encrypt,
   aead_decrypt,
   deriveRecoveryKeyBuffer,
-  deriveRecoveryAuth,
 } from '../crypto.js';
-import { defaultGate } from '../gate.js';
 
-export async function recoverCommand(_options) {
-  let githubToken = 'mock_gh_token';
-  let handle = 'user';
-
-  try {
-    const device = await startDeviceFlow();
-    console.log(`Open browser: ${device.verification_uri || 'https://github.com/login/device'}`);
-    console.log(`Confirmation code: ${device.user_code}`);
-
-    githubToken = await pollForToken(device.device_code, device.interval);
-    const user = await getGitHubUser(githubToken);
-    handle = user.handle;
-  } catch (err) {
-    handle = (await prompt('Enter your GitHub username', 'user')).toLowerCase();
+export async function recoverCommand(options = {}) {
+  let handle = '';
+  if (options.handle) {
+    handle = options.handle.trim().toLowerCase();
+  } else {
+    handle = (await prompt('Enter your GitHub username')).trim().toLowerCase();
   }
 
-  const recoveryKey = await promptSecret('Enter Recovery Key (e.g. 4F8Q-2P9K-...)');
+  if (!handle) {
+    console.error('error: GitHub username is required');
+    return;
+  }
+
+  const recoveryKey = await promptSecret('Enter Recovery Key (e.g. 4F8Q-2P9K-L7R3-M5X8)');
   if (!recoveryKey) {
     console.error('error: recovery key cannot be empty');
     return;
   }
 
-  const recoveryAuth = deriveRecoveryAuth(recoveryKey);
+  const spinner = ora({
+    text: `Fetching encrypted vault for ${handle}...`,
+    color: 'cyan',
+    spinner: 'dots',
+  }).start();
+
+  let vaultData;
+  try {
+    vaultData = await fetchVault(handle);
+  } catch (err) {
+    spinner.stop();
+    console.error(`error: unable to fetch vault (${err.message})`);
+    return;
+  }
+
+  spinner.text = 'Verifying Recovery Key and decrypting vault...';
+
   const recoveryKeyBuf = deriveRecoveryKeyBuffer(recoveryKey);
-
-  let recoverRes;
-  try {
-    recoverRes = await defaultGate.recover(githubToken, handle, recoveryAuth);
-  } catch (err) {
-    console.error(`error: recovery failed: ${err.message}`);
-    return;
-  }
-
-  const { payload: encPayload, wrap_recovery: wrapRecovery } = recoverRes;
-
   let dek;
+  let userPayload;
+
   try {
-    const dekObj = aead_decrypt(recoveryKeyBuf, wrapRecovery, `${handle}/recovery`);
+    const dekObj = aead_decrypt(recoveryKeyBuf, vaultData.wrap_recovery, `${handle}/recovery`);
     dek = Buffer.from(dekObj.dek, 'hex');
+    userPayload = aead_decrypt(dek, vaultData.payload, `${handle}/1`);
   } catch (err) {
-    console.error(`error: failed to decrypt with recovery key: ${err.message}`);
+    spinner.stop();
+    console.error('error: invalid Recovery Key or corrupted vault.');
     return;
   }
 
-  const newRawCode = generateCode(6);
+  if (!userPayload?.github_pat) {
+    spinner.stop();
+    console.error('error: decrypted payload does not contain GitHub token.');
+    return;
+  }
+
+  spinner.text = 'Generating new login code and re-encrypting vault...';
+
+  const newRawCode = generateCode(10);
   const newNormalizedCode = normalizeCode(newRawCode);
-  const newSeed = await deriveSeed(newNormalizedCode, handle);
-  const newAuthKey = hkdf(newSeed, 'swep/auth');
+  const newSaltBuf = crypto.randomBytes(16);
+  const newSaltHex = newSaltBuf.toString('hex');
+
+  const newSeed = await deriveSeed(newNormalizedCode, handle, newSaltBuf);
   const newCodeKey = hkdf(newSeed, 'swep/wrap');
   const newWrapCode = aead_encrypt(newCodeKey, { dek: dek.toString('hex') }, `${handle}/code`);
 
-  try {
-    await defaultGate.recoverFinish({
-      github_token: githubToken,
-      handle,
-      auth_hash: newAuthKey.toString('hex'),
-      wrap_code: newWrapCode,
-      payload: encPayload,
-    });
-  } catch (err) {
-    // continue
-  }
+  vaultData.wrap_code = newWrapCode;
+  vaultData.salt = newSaltHex;
+  vaultData.updated_at = new Date().toISOString();
 
-  const fullLoginCode = `${handle}-${newRawCode}`;
-  console.log(`new login code: ${fullLoginCode}`);
-  console.log(`Account recovered. Run 'swep ${fullLoginCode}' to start.`);
+  spinner.text = 'Uploading updated vault to GitHub...';
+
+  try {
+    const targetRepo = vaultData._repo || 'swep-vault';
+    await uploadVaultToGitHub(userPayload.github_pat, handle, vaultData, targetRepo);
+    spinner.stop();
+
+    const fullLoginCode = `${handle}-${newRawCode}`;
+    console.log();
+    console.log(chalk.green.bold('Account recovered successfully!'));
+    console.log(chalk.dim('  new login code: ') + chalk.bold.green(fullLoginCode));
+    console.log();
+    console.log(`Run 'swep ${chalk.bold.green(fullLoginCode)}' or simply 'swep' to start workspace.\n`);
+  } catch (err) {
+    spinner.stop();
+    console.error(`error: failed to update vault on GitHub (${err.message})`);
+  }
 }

@@ -17,6 +17,7 @@ import {
   getSwepRoot,
 } from '../chrome.js';
 import chalk from 'chalk';
+import { promptSecret } from '../ui.js';
 import {
   saveActiveSession,
   readActiveSession,
@@ -62,10 +63,11 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
       return;
     }
 
-    console.error("usage: swep <code>");
-    console.error("error: login code is required");
-    console.error("Run 'swep register' to create a new workspace vault.\n");
-    return;
+    const entered = await promptSecret('Enter login code (e.g. nhatprx-8GBA-142B-DW, or "exit" to cancel)');
+    if (!entered || entered.trim().toLowerCase() === 'exit' || entered.trim().toLowerCase() === 'q') {
+      return;
+    }
+    passedCode = entered.trim();
   }
 
   // Require login code
@@ -97,7 +99,7 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
     vaultData = await fetchVault(handle);
     spinner.text = 'Deriving encryption keys...';
 
-    const seed = await deriveSeed(normalizedCode, handle);
+    const seed = await deriveSeed(normalizedCode, handle, vaultData.salt || null);
     const codeKey = hkdf(seed, 'swep/wrap');
 
     const dekObj = aead_decrypt(codeKey, vaultData.wrap_code, `${handle}/code`);
@@ -194,6 +196,7 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
 
   saveActiveSession(rootDir, {
     handle,
+    vaultRepo: vaultData._repo || 'swep-vault',
     loginCode: inputCode,
     google_email: userPayload.google_email || handle,
     google_password: userPayload.google_password || '',

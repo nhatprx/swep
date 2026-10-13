@@ -63,3 +63,32 @@ test('vault: checkVaultRepoExists handles 404 gracefully', async () => {
   assert.strictEqual(exists, false);
 });
 
+test('vault: recovery key decrypts DEK and regenerates wrap_code with random salt', async () => {
+  const { generateRecoveryKey, deriveRecoveryKeyBuffer } = await import('../src/crypto.js');
+  const handle = 'recoveryuser';
+  const dek = generateDEK();
+
+  const recoveryKey = generateRecoveryKey();
+  const recoveryKeyBuf = deriveRecoveryKeyBuffer(recoveryKey);
+  const wrapRecovery = aead_encrypt(recoveryKeyBuf, { dek: dek.toString('hex') }, `${handle}/recovery`);
+
+  // Recover DEK
+  const recoveredDekObj = aead_decrypt(recoveryKeyBuf, wrapRecovery, `${handle}/recovery`);
+  assert.strictEqual(recoveredDekObj.dek, dek.toString('hex'));
+
+  // Generate new code with random salt
+  const cryptoModule = await import('crypto');
+  const randomSalt = cryptoModule.default.randomBytes(16);
+  const newCode = generateCode(10);
+  const seed = await deriveSeed(normalizeCode(newCode), handle, randomSalt);
+  const codeKey = hkdf(seed, 'swep/wrap');
+  const newWrapCode = aead_encrypt(codeKey, { dek: dek.toString('hex') }, `${handle}/code`);
+
+  // Verify new code can decrypt
+  const clientSeed = await deriveSeed(normalizeCode(newCode), handle, randomSalt);
+  const clientCodeKey = hkdf(clientSeed, 'swep/wrap');
+  const decryptedObj = aead_decrypt(clientCodeKey, newWrapCode, `${handle}/code`);
+  assert.strictEqual(decryptedObj.dek, dek.toString('hex'));
+});
+
+

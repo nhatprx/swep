@@ -4,9 +4,10 @@
  * tạo kho lưu trữ swep-vault và lưu gói dữ liệu đã mã hóa lên GitHub của bạn
  */
 
+import crypto from 'crypto';
 import chalk from 'chalk';
 import ora from 'ora';
-import { printBanner, printBox, prompt, promptConfirm, createSpinner } from '../ui.js';
+import { printBanner, printBox, prompt, promptSecret, promptConfirm, createSpinner } from '../ui.js';
 import { openCleanBrowserForGitHub, getClipboardText } from '../chrome.js';
 import { getGitHubUser } from '../github.js';
 import {
@@ -47,7 +48,7 @@ export async function registerCommand(options) {
     }
 
     if (!cleanToken) {
-      const entered = await prompt('Enter GitHub Personal Access Token (or "exit" to cancel)');
+      const entered = await promptSecret('Enter GitHub Personal Access Token (or "exit" to cancel)');
       if (entered.trim().toLowerCase() === 'exit' || entered.trim().toLowerCase() === 'q') {
         return;
       }
@@ -117,7 +118,9 @@ export async function registerCommand(options) {
   const rawCode = generateCode(10);
   const normalizedCode = normalizeCode(rawCode);
 
-  const seed = await deriveSeed(normalizedCode, handle);
+  const saltBuf = crypto.randomBytes(16);
+  const saltHex = saltBuf.toString('hex');
+  const seed = await deriveSeed(normalizedCode, handle, saltBuf);
   const codeKey = hkdf(seed, 'swep/wrap');
   const wrapCode = aead_encrypt(codeKey, { dek: dek.toString('hex') }, `${handle}/code`);
 
@@ -127,7 +130,8 @@ export async function registerCommand(options) {
 
   const vaultData = {
     handle,
-    version: 1,
+    version: 2,
+    salt: saltHex,
     wrap_code: wrapCode,
     wrap_recovery: wrapRecovery,
     payload: encryptedPayload,

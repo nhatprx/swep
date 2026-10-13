@@ -22,16 +22,22 @@ const ARGON2_PARAMS = {
 const CROCKFORD_BASE32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'; // 32 chars (10 digits + 22 letters, no I/L/O/U)
 
 /**
- * Dẫn xuất khóa từ mã 6 ký tự bằng Argon2id
- * @param {string} code - Mã đăng nhập (6 ký tự)
+ * Dẫn xuất khóa từ mã đăng nhập bằng Argon2id
+ * @param {string} code - Mã đăng nhập
  * @param {string} handle - GitHub username
+ * @param {Buffer|string} [customSalt] - Salt ngẫu nhiên bổ sung (nếu có)
  * @returns {Promise<Buffer>} Seed (32 byte)
  */
-export async function deriveSeed(code, handle) {
-  const salt = crypto
-    .createHash('sha256')
-    .update(`swep/v1/${handle}`)
-    .digest();
+export async function deriveSeed(code, handle, customSalt = null) {
+  let salt;
+  if (customSalt) {
+    salt = Buffer.isBuffer(customSalt) ? customSalt : Buffer.from(customSalt, 'hex');
+  } else {
+    salt = crypto
+      .createHash('sha256')
+      .update(`swep/v1/${handle}`)
+      .digest();
+  }
 
   return argon2.hash(code, {
     ...ARGON2_PARAMS,
