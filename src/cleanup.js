@@ -107,7 +107,7 @@ export async function removeDirectoryRecursive(dirPath, retries = 5) {
 
     // 2. Thử với cmd rd /s /q (bỏ qua file lock & attributes trên Windows)
     try {
-      await execAsync(`cmd /c "rd /s /q \\"${dirPath}\\""`);
+      await execAsync(`cmd /c "rd /s /q \\"${dirPath}\\""`, { windowsHide: true });
       if (!fs.existsSync(dirPath)) return;
     } catch {
       // ignore
@@ -117,7 +117,7 @@ export async function removeDirectoryRecursive(dirPath, retries = 5) {
     try {
       const psScript = `Remove-Item -LiteralPath "${dirPath}" -Recurse -Force -ErrorAction SilentlyContinue`;
       const b64 = Buffer.from(psScript, 'utf16le').toString('base64');
-      await execAsync(`powershell -NoProfile -EncodedCommand ${b64}`);
+      await execAsync(`powershell -NoProfile -WindowStyle Hidden -NonInteractive -EncodedCommand ${b64}`, { windowsHide: true });
       if (!fs.existsSync(dirPath)) return;
     } catch {
       // ignore
@@ -159,7 +159,7 @@ export async function performCleanup(rootDir, options = {}) {
     console.log(chalk.yellow('[dry-run] Sẽ xóa dữ liệu trên clipboard'));
   } else {
     try {
-      await execAsync('powershell -NoProfile -Command "Set-Clipboard -Value \\"\\""');
+      await execAsync('powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "Set-Clipboard -Value \\"\\""', { windowsHide: true });
     } catch {
       // ignore
     }
@@ -183,7 +183,7 @@ export async function performCleanup(rootDir, options = {}) {
       console.log(chalk.yellow('[dry-run] Sẽ gỡ Chrome vì Swep là bên đã cài'));
     } else {
       try {
-        await execAsync('winget uninstall Google.Chrome --silent', { timeout: 60000 });
+        await execAsync('winget uninstall Google.Chrome --silent', { timeout: 60000, windowsHide: true });
         report.uninstalledChrome = true;
       } catch {
         // winget uninstall failure
@@ -246,7 +246,7 @@ if ($regPath) {
 }
 `;
         const b64 = Buffer.from(psRemovePath, 'utf16le').toString('base64');
-        await execAsync(`powershell -NoProfile -NonInteractive -EncodedCommand ${b64}`);
+        await execAsync(`powershell -NoProfile -WindowStyle Hidden -NonInteractive -EncodedCommand ${b64}`, { windowsHide: true });
       } catch {
         // ignore
       }
@@ -283,7 +283,7 @@ if ($regPath) {
 Get-CimInstance Win32_Process | Where-Object { ($_.CommandLine -like '*\\Swep\\*' -or $_.CommandLine -like '*swep.js*') -and $_.ProcessId -ne ${process.pid} } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 `;
       const b64Kill = Buffer.from(killLingering, 'utf16le').toString('base64');
-      await execAsync(`powershell -NoProfile -NonInteractive -EncodedCommand ${b64Kill}`);
+      await execAsync(`powershell -NoProfile -WindowStyle Hidden -NonInteractive -EncodedCommand ${b64Kill}`, { windowsHide: true });
     } catch {
       // ignore
     }
@@ -298,7 +298,6 @@ Start-Sleep -Seconds 1
 for ($i = 0; $i -lt 10; $i++) {
   if (Test-Path -LiteralPath '${defaultSwepDir.replace(/'/g, "''")}') {
     Remove-Item -LiteralPath '${defaultSwepDir.replace(/'/g, "''")}' -Recurse -Force -ErrorAction SilentlyContinue
-    cmd.exe /c "rd /s /q \\"${defaultSwepDir}\\" >nul 2>nul"
   } else {
     break
   }
@@ -314,7 +313,7 @@ if (Test-Path $npmDir) {
 }
 `;
       const b64Destruct = Buffer.from(psDestructScript, 'utf16le').toString('base64');
-      const cp = spawn('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-EncodedCommand', b64Destruct], {
+      const cp = spawn('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-NonInteractive', '-EncodedCommand', b64Destruct], {
         detached: true,
         stdio: 'ignore',
         windowsHide: true,

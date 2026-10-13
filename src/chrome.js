@@ -247,13 +247,16 @@ $procs = Get-CimInstance Win32_Process | Where-Object { ($_.Name -in $targetName
 
 foreach ($p in $procs) {
     try {
-        taskkill /PID $p.ProcessId /T /F | Out-Null
+        Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
         $p.ProcessId
     } catch {}
 }
 `;
     const b64 = Buffer.from(psScript, 'utf16le').toString('base64');
-    const { stdout } = await execAsync(`powershell -NoProfile -EncodedCommand ${b64}`);
+    const { stdout } = await execAsync(
+      `powershell -NoProfile -WindowStyle Hidden -NonInteractive -EncodedCommand ${b64}`,
+      { windowsHide: true }
+    );
     const pids = stdout.trim().split(/\r?\n/).filter((l) => /^\d+$/.test(l.trim()));
     killedCount = pids.length;
   } catch {
@@ -273,12 +276,12 @@ export const killSwepChromeProcesses = killSwepBrowserProcesses;
 export async function copyToClipboardWithAutoClear(text, timeoutSec = 25) {
   try {
     const escapedText = text.replace(/`/g, '``').replace(/"/g, '`"').replace(/\$/g, '`$');
-    await execAsync(`powershell -NoProfile -Command "Set-Clipboard -Value \\"${escapedText}\\""`);
+    await execAsync(`powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "Set-Clipboard -Value \\"${escapedText}\\""`, { windowsHide: true });
 
     // Hẹn giờ tự xóa clipboard
     setTimeout(async () => {
       try {
-        await execAsync('powershell -NoProfile -Command "Set-Clipboard -Value \\"\\""');
+        await execAsync('powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "Set-Clipboard -Value \\"\\""', { windowsHide: true });
       } catch {
         // ignore
       }
@@ -294,7 +297,7 @@ export async function copyToClipboardWithAutoClear(text, timeoutSec = 25) {
  */
 export async function getClipboardText() {
   try {
-    const { stdout } = await execAsync('powershell -NoProfile -Command "Get-Clipboard"');
+    const { stdout } = await execAsync('powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "Get-Clipboard"', { windowsHide: true });
     return stdout.trim();
   } catch {
     return '';
@@ -364,7 +367,7 @@ Start-Sleep -Seconds 2
   try {
     onProgress('Đang chờ trang đăng nhập Google tải (4s)...');
     fs.writeFileSync(tempScriptPath, psScript, 'utf8');
-    await execAsync(`powershell -NoProfile -ExecutionPolicy Bypass -File "${tempScriptPath}"`);
+    await execAsync(`powershell -NoProfile -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File "${tempScriptPath}"`, { windowsHide: true });
     fs.unlinkSync(tempScriptPath);
     return true;
   } catch {

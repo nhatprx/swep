@@ -1,124 +1,115 @@
 # Swep
-> An ephemeral workspace manager with isolated Chrome profiles.
-> **One command to start. Your workspace, ready to go.**
 
-![Version](https://img.shields.io/badge/version-0.1.5-blue.svg?style=for-the-badge)
-![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18.0.0-339933.svg?style=for-the-badge&logo=nodedotjs&logoColor=white)
-![Platform](https://img.shields.io/badge/platform-Windows-0078D6.svg?style=for-the-badge&logo=windows&logoColor=white)
-![License](https://img.shields.io/badge/license-MIT-yellow.svg?style=for-the-badge)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="logo-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="logo-light.png">
+    <img alt="Swep Logo" src="logo-light.png" width="480">
+  </picture>
+</p>
+
+<p align="center">
+  Ephemeral workspace manager with isolated Chrome profiles.
+</p>
+
+<p align="center">
+  <a href="https://github.com/nhatprx/swep/releases"><img src="https://img.shields.io/github/v/tag/nhatprx/swep?label=release&style=flat-square" alt="Release Tag"></a>
+  <a href="https://www.npmjs.com/package/@nhatprx/swep"><img src="https://img.shields.io/npm/v/@nhatprx/swep?style=flat-square" alt="npm version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/nhatprx/swep?style=flat-square" alt="License"></a>
+  <img src="https://img.shields.io/badge/node-%3E%3D18.0.0-339933.svg?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js">
+  <img src="https://img.shields.io/badge/platform-Windows-0078D6.svg?style=flat-square&logo=windows&logoColor=white" alt="Platform">
+</p>
+
+---
+
+## Quickstart
+
+### Prerequisites
+
+- Windows 10 or later
+- Node.js 18.0.0 or later
+- Google Chrome
+
+If Node.js is not installed:
+
+```powershell
+winget install OpenJS.NodeJS.LTS
+```
+
+### Installation
+
+Install Swep globally using npm:
+
+```powershell
+npm install -g @nhatprx/swep
+```
+
+### Basic Workflow
+
+1. Register account and vault (on your trusted machine):
+
+   ```powershell
+   swep register
+   ```
+
+2. Start your workspace with your login code:
+
+   ```powershell
+   swep <login-code>
+   ```
+
+3. Exit, back up, and clean up workspace data:
+
+   ```powershell
+   swep exit
+   ```
 
 ## Features
 
-- **One-Command Setup:** Install Swep on a Windows machine directly from PowerShell without manually cloning the repository.
-- **Isolated Chrome Profiles:** Launch a dedicated Chrome profile without interfering with your primary browser profile.
-- **Session Restoration:** Restore supported browser session data from an encrypted Profile Capsule.
-- **Encrypted Cloud Vault:** Store encrypted workspace data in your GitHub repository using client-side encryption.
-- **Cross-Device Workspaces:** Resume your supported browser session on another Windows device using your login code.
-- **Quick Chrome Recovery:** Reopen your current Swep browser session instantly with `swep chrome`.
-- **Automated Cleanup:** Back up session data and remove Swep's managed local files when your session ends.
-- **Recovery Key:** Recover access to your encrypted vault using a separately generated recovery key.
-- **Built-in Diagnostics:** Check system prerequisites, Chrome, Node.js, Registry configuration, and network connectivity with `swep doctor`.
-
-## Quick Start
-
-### Yêu cầu tiên quyết:
-Máy cần cài đặt **Node.js (>= 18.0.0)** trước khi sử dụng.
-> Nếu máy chưa có Node.js, bạn có thể cài nhanh bằng lệnh Windows:
-> ```powershell
-> winget install OpenJS.NodeJS.LTS
-> ```
-
-### Cài đặt Swep (1 lệnh duy nhất):
-Mở terminal và chạy:
-```powershell
-npm i -g @nhatprx/swep
-```
-
-Sau khi cài đặt xong, bạn có thể sử dụng ngay lệnh `swep` trên toàn hệ thống.
-
-## Usage
-
-### 1. Register Your Account
-
-Run this command on your trusted device:
-
-```powershell
-swep register
-```
-
-Initialize your encrypted vault, configure GitHub access, and generate your login code and Recovery Key.
-
-### 2. Start Your Workspace
-
-On any supported Windows device, run:
-
-```powershell
-swep <login-code>
-```
-
-Swep retrieves your encrypted vault, restores the supported Profile Capsule data, and launches Chrome with an isolated profile.
-
-### 3. Reopen Browser
-
-If you close the browser accidentally, run:
-
-```powershell
-swep open
-```
-
-### 4. Switch or Log Out Key (Keep Swep Installed)
-
-When you want to log out the active key, clean the browser profile, and prepare for another key without uninstalling Swep:
-
-```powershell
-swep checkout
-```
-
-### 5. Finish and Self-Destruct
-
-When you want to save session data, purge the workspace, and completely self-destruct Swep from the machine:
-
-```powershell
-swep exit
-```
-
-Alias: `swep down`
-
-Swep backs up your encrypted session data, closes the browser, and removes all local workspace files and command shims.
+- One-Command Setup: Install globally via npm and run directly in PowerShell.
+- Isolated Chrome Profiles: Launch separate browser instances without modifying primary personal profiles.
+- Encrypted Capsule Storage: Encrypt workspace data locally using client-side cryptographic keys before syncing to GitHub.
+- Cross-Device Mobility: Seamlessly resume your workspace on any supported Windows machine using your login code.
+- Instant Session Recovery: Quickly reopen closed browser sessions with `swep open`.
+- Automated Cleanup: Synchronize encrypted backup state and purge ephemeral local workspace files upon exit.
+- Built-in Diagnostics: Verify system prerequisites, registry configurations, and connectivity using `swep doctor`.
 
 ## CLI Commands
 
 | Command | Alias | Description |
 |---|---|---|
-| `swep <code>` | `swep up`, `swep login` | Restore a session and launch an isolated browser profile (shows `key-id`). |
-| `swep open` | `swep chrome` | Reopen the active Swep browser session. |
-| `swep checkout` | — | Log out current key, clean profile data, keep Swep ready for next key. |
-| `swep exit` | `swep down` | Back up session data, clean profile, and self-destruct Swep. |
-| `swep update` | — | Check and update Swep to the latest version. |
-| `swep register` | — | Initialize account and encrypted vault (shows `key-id`). |
-| `swep -v` | `swep --version` | Display the current version. |
-| `swep doctor` | — | Diagnose system and connectivity issues. |
-| `swep recover` | — | Recover vault access using the Recovery Key. |
-| `swep revoke` | — | Revoke access codes and disable vault access. |
+| `swep <code>` | `swep up`, `swep login` | Restore session data and launch an isolated browser profile. |
+| `swep open` | `swep chrome` | Reopen the active isolated browser session. |
+| `swep checkout` | - | Log out active key and reset profile data while retaining Swep. |
+| `swep exit` | `swep down` | Back up session, close browser, and purge local workspace files. |
+| `swep register` | - | Initialize account and encrypted vault. |
+| `swep doctor` | - | Diagnose environment prerequisites and network connectivity. |
+| `swep recover` | - | Recover vault access using the Recovery Key. |
+| `swep revoke` | - | Revoke active access codes and disable vault access. |
+| `swep update` | - | Check and update Swep to the latest release. |
+| `swep -v` | `swep --version` | Display installed version. |
 
 ## Security
 
-- **Client-Side Encryption:** Designed to encrypt sensitive data locally before uploading it to GitHub.
-- **Modern Cryptography:** Uses ChaCha20-Poly1305 AEAD and Argon2id for authenticated encryption and key derivation.
-- **No Separate Application Server:** Uses GitHub for encrypted artifact storage and distribution.
-- **Local Profile Isolation:** Keeps the Swep Chrome profile separate from your primary Chrome profile.
-- **Access Recovery:** Provides a Recovery Key for supported account recovery workflows.
-
-Security depends on the implementation, key management, GitHub token permissions, and the security of the device running Swep. Restored browser sessions may require additional authentication, and deleting Swep's managed files does not guarantee removal of every operating-system or browser artifact.
-
-## Requirements
-
-- Windows
-- PowerShell
-- Node.js 18.0.0 or later
-- Google Chrome
-- GitHub account and a Personal Access Token with the required permissions
+- Client-Side Encryption: Sensitive data is encrypted on the local machine before upload.
+- Modern Cryptography: Authenticated encryption powered by ChaCha20-Poly1305 / TweetNaCl and Argon2id key derivation.
+- Zero Application Server: Stores encrypted blobs directly in GitHub repositories without middleman application servers.
+- Local Profile Isolation: Ephemeral browser profiles remain strictly segregated from personal browser profiles.
+- Vulnerability Reporting: For security disclosures, please consult [SECURITY.md](SECURITY.md) to report issues privately.
 
 ## License
 
-Released under the [MIT License](LICENSE).
+This project is licensed under the [MIT License](LICENSE).
+
+### Third-Party Licenses
+
+Swep depends on the following open-source libraries:
+
+- TweetNaCl: Public Domain
+- Argon2: Apache License 2.0 / CC0 1.0
+- CryptoJS: MIT License
+- Commander.js: MIT License
+- Chalk: MIT License
+- Ora: MIT License
+- Axios: MIT License
+- Dotenv: BSD-2-Clause License

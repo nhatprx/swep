@@ -9,6 +9,7 @@ import ora from 'ora';
 import chalk from 'chalk';
 import { getSwepRoot, openSwepBrowser } from '../chrome.js';
 import { getActiveKey } from '../bridge.js';
+import { spawnWatchdog } from '../watchdog.js';
 
 export async function openCommand(options = {}) {
   const rootDir = getSwepRoot(options.root);
@@ -34,6 +35,7 @@ export async function openCommand(options = {}) {
     spinner.stop();
     if (opened) {
       console.log('Browser reopened.');
+      spawnWatchdog(rootDir, process.ppid);
     } else {
       console.error('error: unable to reopen browser.');
     }
