@@ -1,5 +1,3 @@
-# Swep
-
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="logo-dark.png">
@@ -20,10 +18,7 @@
   <img src="https://img.shields.io/badge/platform-Windows-0078D6.svg?style=flat-square&logo=windows&logoColor=white" alt="Platform">
 </p>
 
----
-
-## Quickstart
-
+--- 
 ### Prerequisites
 
 - Windows 10 or later
@@ -43,26 +38,6 @@ Install Swep globally using npm:
 ```powershell
 npm install -g @nhatprx/swep
 ```
-
-### Basic Workflow
-
-1. Register account and vault (on your trusted machine):
-
-   ```powershell
-   swep register
-   ```
-
-2. Start your workspace with your login code:
-
-   ```powershell
-   swep <login-code>
-   ```
-
-3. Exit, back up, and clean up workspace data:
-
-   ```powershell
-   swep exit
-   ```
 
 ## Features
 
