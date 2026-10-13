@@ -21,30 +21,20 @@
 
 ## Quick Start
 
-### Cách 1: Chạy trực tiếp qua npx (Không cần cài đặt trước)
+### Yêu cầu tiên quyết:
+Máy cần cài đặt **Node.js (>= 18.0.0)** trước khi sử dụng.
+> Nếu máy chưa có Node.js, bạn có thể cài nhanh bằng lệnh Windows:
+> ```powershell
+> winget install OpenJS.NodeJS.LTS
+> ```
 
-Nếu máy đã có Node.js, bạn có thể chạy ngay lập tức mà không cần cài đặt:
-
-```powershell
-npx @nhatprx/swep <login-code>
-```
-
-Hoặc cài đặt toàn cục để dùng lệnh ngắn gọn `swep`:
-
+### Cài đặt Swep (1 lệnh duy nhất):
+Mở terminal và chạy:
 ```powershell
 npm i -g @nhatprx/swep
-swep <login-code>
 ```
 
-### Cách 2: Tự động cài đặt 1 lệnh trên Windows (Auto-install Node.js & Swep)
-
-Mở PowerShell và chạy:
-
-```powershell
-irm https://raw.githubusercontent.com/nhatprx/swep/main/install.ps1 | iex
-```
-
-The installer automatically checks for Node.js, downloads Swep to `%LOCALAPPDATA%\Swep`, and registers the `swep` command in your user PATH.
+Sau khi cài đặt xong, bạn có thể sử dụng ngay lệnh `swep` trên toàn hệ thống.
 
 ## Usage
 
