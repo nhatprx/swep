@@ -47,13 +47,13 @@ const EXCLUDE_FILES = new Set([
   'SingletonLock',
   'SingletonCookie',
   'SingletonSocket',
+  'chrome_debug.log',
 ]);
 
 const EXCLUDE_EXTS = new Set([
   '.tmp',
   '.bak',
   '.old',
-  '.log',
 ]);
 
 /**
