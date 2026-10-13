@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Swep Session Capsule",
+  "version": "1.0.0",
+  "description": "Seamless zero-login session roaming for Swep disposable workplace",
+  "permissions": [
+    "cookies",
+    "tabs",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Swep Active"
+  }
+}

@@ -158,6 +158,8 @@ export async function registerCommand(options) {
     google_email: googleEmail,
     google_password: googlePassword,
     totp_secret: cleanTotp,
+    github_pat: cleanToken,
+    session: null,
     version: 1,
   };
   const aadPayload = `${handle}/1`;

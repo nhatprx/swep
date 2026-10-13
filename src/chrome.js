@@ -77,9 +77,10 @@ export async function installChromeViaWinget() {
  * @param {string} chromeExe
  * @param {string} rootDir
  * @param {string} [targetUrl]
+ * @param {string} [extensionDir]
  * @returns {Promise<import('child_process').ChildProcess>}
  */
-export async function launchIsolatedChrome(chromeExe, rootDir, targetUrl = 'https://accounts.google.com') {
+export async function launchIsolatedChrome(chromeExe, rootDir, targetUrl = 'https://accounts.google.com', extensionDir = '') {
   const profileDir = path.join(rootDir, 'chrome-profile');
   if (!fs.existsSync(profileDir)) {
     fs.mkdirSync(profileDir, { recursive: true });
@@ -89,8 +90,14 @@ export async function launchIsolatedChrome(chromeExe, rootDir, targetUrl = 'http
     `--user-data-dir=${profileDir}`,
     '--no-first-run',
     '--no-default-browser-check',
-    targetUrl,
   ];
+
+  if (extensionDir && fs.existsSync(extensionDir)) {
+    args.push(`--load-extension=${extensionDir}`);
+    args.push(`--disable-extensions-except=${extensionDir}`);
+  }
+
+  args.push(targetUrl);
 
   const child = spawn(chromeExe, args, {
     detached: true,
@@ -99,6 +106,26 @@ export async function launchIsolatedChrome(chromeExe, rootDir, targetUrl = 'http
   child.unref();
 
   return child;
+}
+
+/**
+ * Mở lại cửa sổ Chrome của Swep với profile cô lập
+ * @param {string} rootDir
+ * @param {string} [targetUrl]
+ * @returns {Promise<boolean>}
+ */
+export async function openSwepChrome(rootDir, targetUrl = 'https://myaccount.google.com') {
+  const chromeExe = await findChromePath();
+  if (!chromeExe) {
+    throw new Error('Không tìm thấy Google Chrome trên máy.');
+  }
+  const profileDir = path.join(rootDir, 'chrome-profile');
+  if (!fs.existsSync(profileDir)) {
+    return false;
+  }
+  const extensionDir = path.join(rootDir, 'extension');
+  await launchIsolatedChrome(chromeExe, rootDir, targetUrl, extensionDir);
+  return true;
 }
 
 /**

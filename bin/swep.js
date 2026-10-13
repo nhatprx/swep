@@ -14,6 +14,7 @@ import {
   recoverCommand,
   revokeCommand,
   doctorCommand,
+  chromeCommand,
 } from '../src/commands/index.js';
 
 const version = '0.1.0';
@@ -38,6 +39,14 @@ program
   .option('--dry-run', 'Chỉ in ra, không thực hiện')
   .option('--root <path>', 'Đường dẫn thư mục gốc (mặc định: %LOCALAPPDATA%\\Swep)')
   .action(loginCommand);
+
+// Chrome command (re-open isolated Chrome)
+program
+  .command('chrome')
+  .alias('open')
+  .description('Mở lại cửa sổ Chrome của Swep (không ảnh hưởng Chrome của máy)')
+  .option('--root <path>', 'Đường dẫn thư mục gốc')
+  .action(chromeCommand);
 
 // Down command
 program
