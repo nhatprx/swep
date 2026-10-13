@@ -11,12 +11,13 @@ import axios from 'axios';
  * @returns {Promise<object>} Dữ liệu vault đã mã hóa
  */
 export async function fetchVault(handle) {
-  const url = `https://raw.githubusercontent.com/${handle}/swep-vault/main/vault.json`;
+  const url = `https://raw.githubusercontent.com/${handle}/swep-vault/main/vault.json?t=${Date.now()}`;
   try {
     const res = await axios.get(url, {
       timeout: 10000,
       headers: {
-        'Cache-Control': 'no-cache',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
         'User-Agent': 'swep-cli/0.1.0',
       },
     });
