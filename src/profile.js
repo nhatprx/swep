@@ -12,10 +12,7 @@ import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
 import crypto from 'crypto';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+import { runHiddenPowerShell } from './chrome.js';
 
 // Magic header định danh Swep Capsule v2
 const CAPSULE_MAGIC = Buffer.from('SWEP\x02', 'binary'); // 5 bytes
@@ -104,8 +101,7 @@ $bytes = [Convert]::FromBase64String('${b64ProtectedData}')
 $unprotected = [System.Security.Cryptography.ProtectedData]::Unprotect($bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
 [Convert]::ToBase64String($unprotected)
 `;
-    const b64Cmd = Buffer.from(psScript, 'utf16le').toString('base64');
-    const { stdout } = await execAsync(`powershell -NoProfile -EncodedCommand ${b64Cmd}`);
+    const stdout = await runHiddenPowerShell(psScript);
     return Buffer.from(stdout.trim(), 'base64');
   } catch {
     return null;
@@ -126,8 +122,7 @@ $bytes = [Convert]::FromBase64String('${b64Raw}')
 $protected = [System.Security.Cryptography.ProtectedData]::Protect($bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
 [Convert]::ToBase64String($protected)
 `;
-    const b64Cmd = Buffer.from(psScript, 'utf16le').toString('base64');
-    const { stdout } = await execAsync(`powershell -NoProfile -EncodedCommand ${b64Cmd}`);
+    const stdout = await runHiddenPowerShell(psScript);
     return Buffer.from(stdout.trim(), 'base64');
   } catch {
     return null;

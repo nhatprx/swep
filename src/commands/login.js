@@ -205,7 +205,7 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
     userPayload,
   });
 
-  spawnWatchdog(rootDir, process.ppid);
+  await spawnWatchdog(rootDir, process.ppid);
 
   // 5. Launch Browser
   spinner.text = 'Launching browser...';

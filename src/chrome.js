@@ -231,6 +231,36 @@ export async function openCleanBrowserForGitHub(targetUrl = 'https://github.com/
 }
 
 /**
+ * Executes a PowerShell script directly via spawn with CREATE_NO_WINDOW
+ * Guaranteed to NEVER spawn any console window (conhost.exe) on Windows.
+ * @param {string} script
+ * @returns {Promise<string>}
+ */
+export function runHiddenPowerShell(script) {
+  return new Promise((resolve) => {
+    const b64 = Buffer.from(script, 'utf16le').toString('base64');
+    const child = spawn('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-EncodedCommand',
+      b64,
+    ], {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+
+    let stdout = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+    });
+    child.on('close', () => {
+      resolve(stdout.trim());
+    });
+    child.on('error', () => resolve(''));
+  });
+}
+
+/**
  * Kill active isolated Swep browser processes (Chrome, Edge, Brave, etc.)
  * Does not terminate the host user's personal browsers
  * @param {string} rootDir
@@ -252,12 +282,8 @@ foreach ($p in $procs) {
     } catch {}
 }
 `;
-    const b64 = Buffer.from(psScript, 'utf16le').toString('base64');
-    const { stdout } = await execAsync(
-      `powershell -NoProfile -WindowStyle Hidden -NonInteractive -EncodedCommand ${b64}`,
-      { windowsHide: true }
-    );
-    const pids = stdout.trim().split(/\r?\n/).filter((l) => /^\d+$/.test(l.trim()));
+    const stdout = await runHiddenPowerShell(psScript);
+    const pids = stdout.split(/\r?\n/).filter((l) => /^\d+$/.test(l.trim()));
     killedCount = pids.length;
   } catch {
     // ignore
@@ -276,12 +302,12 @@ export const killSwepChromeProcesses = killSwepBrowserProcesses;
 export async function copyToClipboardWithAutoClear(text, timeoutSec = 25) {
   try {
     const escapedText = text.replace(/`/g, '``').replace(/"/g, '`"').replace(/\$/g, '`$');
-    await execAsync(`powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "Set-Clipboard -Value \\"${escapedText}\\""`, { windowsHide: true });
+    await runHiddenPowerShell(`Set-Clipboard -Value "${escapedText}"`);
 
     // Hẹn giờ tự xóa clipboard
     setTimeout(async () => {
       try {
-        await execAsync('powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "Set-Clipboard -Value \\"\\""', { windowsHide: true });
+        await runHiddenPowerShell('Set-Clipboard -Value ""');
       } catch {
         // ignore
       }
@@ -297,7 +323,7 @@ export async function copyToClipboardWithAutoClear(text, timeoutSec = 25) {
  */
 export async function getClipboardText() {
   try {
-    const { stdout } = await execAsync('powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "Get-Clipboard"', { windowsHide: true });
+    const stdout = await runHiddenPowerShell('Get-Clipboard');
     return stdout.trim();
   } catch {
     return '';

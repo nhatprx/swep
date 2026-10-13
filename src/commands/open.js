@@ -35,7 +35,7 @@ export async function openCommand(options = {}) {
     spinner.stop();
     if (opened) {
       console.log('Browser reopened.');
-      spawnWatchdog(rootDir, process.ppid);
+      await spawnWatchdog(rootDir, process.ppid);
     } else {
       console.error('error: unable to reopen browser.');
     }

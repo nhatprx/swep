@@ -6,8 +6,8 @@ import os from 'os';
 import { getInteractiveTerminalPid, silentCheckout } from '../src/watchdog.js';
 import { saveActiveSession, readActiveSession } from '../src/bridge.js';
 
-test('watchdog: getInteractiveTerminalPid returns valid number', () => {
-  const pid = getInteractiveTerminalPid(process.ppid);
+test('watchdog: getInteractiveTerminalPid returns valid number', async () => {
+  const pid = await getInteractiveTerminalPid(process.ppid);
   assert.strictEqual(typeof pid, 'number');
   assert.ok(pid > 0);
 });

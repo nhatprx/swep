@@ -259,28 +259,56 @@ export async function uploadProfileCapsuleToGitHub(token, handle, encryptedCapsu
     if (existing) {
       try {
         await axios.delete(`https://api.github.com/repos/${handle}/${repoName}/releases/assets/${existing.id}`, { headers });
+        await new Promise((r) => setTimeout(r, 1200));
       } catch {
         // ignore
       }
     }
   }
 
-  // 3. Upload asset mới
+  // 3. Upload asset mới (với cơ chế retry chống lỗi race-condition 422 trên GitHub)
   const uploadUrl = `https://uploads.github.com/repos/${handle}/${repoName}/releases/${release.id}/assets?name=${encodeURIComponent(assetName)}`;
-  try {
-    await axios.post(uploadUrl, encryptedCapsuleBuffer, {
-      headers: {
-        ...headers,
-        'Content-Type': 'application/octet-stream',
-      },
-      maxBodyLength: Infinity,
-      maxContentLength: Infinity,
-      timeout: 120000,
-    });
-    return true;
-  } catch (err) {
-    const msg = err.response?.data?.message || err.message;
+  let uploaded = false;
+  let lastErr = null;
+
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      await axios.post(uploadUrl, encryptedCapsuleBuffer, {
+        headers: {
+          ...headers,
+          'Content-Type': 'application/octet-stream',
+        },
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+        timeout: 120000,
+      });
+      uploaded = true;
+      break;
+    } catch (err) {
+      lastErr = err;
+      if (err.response?.status === 422 && attempt < 4) {
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          const freshRel = await axios.get(`https://api.github.com/repos/${handle}/${repoName}/releases/${release.id}`, { headers });
+          const stillThere = freshRel.data.assets?.find((a) => a.name === assetName);
+          if (stillThere) {
+            await axios.delete(`https://api.github.com/repos/${handle}/${repoName}/releases/assets/${stillThere.id}`, { headers });
+            await new Promise((r) => setTimeout(r, 1200));
+          }
+        } catch {
+          // ignore
+        }
+      } else {
+        break;
+      }
+    }
+  }
+
+  if (!uploaded) {
+    const msg = lastErr?.response?.data?.message || lastErr?.message;
     throw new Error(`Lỗi upload capsule lên GitHub Releases: ${msg}`);
   }
+
+  return true;
 }
 

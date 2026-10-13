@@ -8,7 +8,7 @@ import path from 'path';
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import chalk from 'chalk';
-import { killSwepChromeProcesses } from './chrome.js';
+import { killSwepChromeProcesses, runHiddenPowerShell } from './chrome.js';
 
 const execAsync = promisify(exec);
 
@@ -93,38 +93,19 @@ export function readLedger(rootDir) {
  * @param {string} dirPath
  * @param {number} [retries=3]
  */
-export async function removeDirectoryRecursive(dirPath, retries = 5) {
+export async function removeDirectoryRecursive(dirPath, retries = 6) {
   if (!fs.existsSync(dirPath)) return;
 
   for (let i = 0; i < retries; i++) {
-    // 1. Thử với fs.rmSync
     try {
-      fs.rmSync(dirPath, { recursive: true, force: true });
-      if (!fs.existsSync(dirPath)) return;
-    } catch {
-      // ignore
-    }
-
-    // 2. Thử với cmd rd /s /q (bỏ qua file lock & attributes trên Windows)
-    try {
-      await execAsync(`cmd /c "rd /s /q \\"${dirPath}\\""`, { windowsHide: true });
-      if (!fs.existsSync(dirPath)) return;
-    } catch {
-      // ignore
-    }
-
-    // 3. Thử với PowerShell Remove-Item
-    try {
-      const psScript = `Remove-Item -LiteralPath "${dirPath}" -Recurse -Force -ErrorAction SilentlyContinue`;
-      const b64 = Buffer.from(psScript, 'utf16le').toString('base64');
-      await execAsync(`powershell -NoProfile -WindowStyle Hidden -NonInteractive -EncodedCommand ${b64}`, { windowsHide: true });
+      fs.rmSync(dirPath, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
       if (!fs.existsSync(dirPath)) return;
     } catch {
       // ignore
     }
 
     if (!fs.existsSync(dirPath)) return;
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, 500));
   }
 }
 
@@ -159,7 +140,7 @@ export async function performCleanup(rootDir, options = {}) {
     console.log(chalk.yellow('[dry-run] Sẽ xóa dữ liệu trên clipboard'));
   } else {
     try {
-      await execAsync('powershell -NoProfile -WindowStyle Hidden -NonInteractive -Command "Set-Clipboard -Value \\"\\""', { windowsHide: true });
+      await runHiddenPowerShell('Set-Clipboard -Value ""');
     } catch {
       // ignore
     }
@@ -245,8 +226,7 @@ if ($regPath) {
   [Environment]::SetEnvironmentVariable('Path', ($items -join ';'), 'User')
 }
 `;
-        const b64 = Buffer.from(psRemovePath, 'utf16le').toString('base64');
-        await execAsync(`powershell -NoProfile -WindowStyle Hidden -NonInteractive -EncodedCommand ${b64}`, { windowsHide: true });
+        await runHiddenPowerShell(psRemovePath);
       } catch {
         // ignore
       }
@@ -282,8 +262,7 @@ if ($regPath) {
       const killLingering = `
 Get-CimInstance Win32_Process | Where-Object { ($_.CommandLine -like '*\\Swep\\*' -or $_.CommandLine -like '*swep.js*') -and $_.ProcessId -ne ${process.pid} } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 `;
-      const b64Kill = Buffer.from(killLingering, 'utf16le').toString('base64');
-      await execAsync(`powershell -NoProfile -WindowStyle Hidden -NonInteractive -EncodedCommand ${b64Kill}`, { windowsHide: true });
+      await runHiddenPowerShell(killLingering);
     } catch {
       // ignore
     }

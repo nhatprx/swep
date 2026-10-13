@@ -6,10 +6,10 @@
 
 import fs from 'fs';
 import path from 'path';
-import { spawn, execSync } from 'child_process';
+import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { readActiveSession, removeActiveSession } from './bridge.js';
-import { killSwepBrowserProcesses } from './chrome.js';
+import { killSwepBrowserProcesses, runHiddenPowerShell } from './chrome.js';
 import { performCleanup } from './cleanup.js';
 import { closeChromeViaCDP, getCookiesViaCDP } from './cdp.js';
 import { packProfileDirectory, encryptCapsule } from './profile.js';
@@ -25,9 +25,9 @@ let isCheckingOut = false;
 /**
  * Resolves the persistent interactive shell / terminal PID from a potentially transient runner PID
  * @param {number} [initialPid]
- * @returns {number}
+ * @returns {Promise<number>}
  */
-export function getInteractiveTerminalPid(initialPid = process.ppid) {
+export async function getInteractiveTerminalPid(initialPid = process.ppid) {
   try {
     const pidNum = Number(initialPid);
     if (!pidNum || pidNum <= 0) return initialPid;
@@ -46,11 +46,7 @@ if ($proc) {
     $proc.ProcessId
 }
 `;
-    const b64 = Buffer.from(script, 'utf16le').toString('base64');
-    const out = execSync(`powershell -NoProfile -WindowStyle Hidden -NonInteractive -EncodedCommand ${b64}`, {
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).toString();
+    const out = await runHiddenPowerShell(script);
     const clean = out.trim().split(/\r?\n/).filter((l) => /^\d+$/.test(l.trim())).pop();
     if (clean) return parseInt(clean, 10);
   } catch {
@@ -64,8 +60,8 @@ if ($proc) {
  * @param {string} rootDir
  * @param {number} terminalPid
  */
-export function spawnWatchdog(rootDir, terminalPid) {
-  const resolvedPid = getInteractiveTerminalPid(terminalPid);
+export async function spawnWatchdog(rootDir, terminalPid) {
+  const resolvedPid = await getInteractiveTerminalPid(terminalPid);
   const pidNum = Number(resolvedPid);
   if (!pidNum || pidNum <= 0) return;
 
@@ -132,11 +128,7 @@ export async function runWatchdog(terminalPid, rootDir) {
       try {
         await silentCheckout(rootDir);
       } catch {
-        try {
-          await performCleanup(rootDir, { selfDestruct: false });
-        } catch {
-          // ignore
-        }
+        // ignore
       }
       cleanupWatchdogPid(rootDir);
       process.exit(0);
@@ -153,7 +145,7 @@ export async function runWatchdog(terminalPid, rootDir) {
 /**
  * Silently checkout session without user interaction:
  * Captures live cookies via CDP, gracefully terminates browser with zero console flashes,
- * uploads encrypted profile capsule to GitHub, and wipes local profile.
+ * uploads encrypted profile capsule to GitHub, and wipes local profile ONLY IF upload succeeded.
  * @param {string} rootDir
  */
 export async function silentCheckout(rootDir) {
@@ -245,6 +237,7 @@ export async function silentCheckout(rootDir) {
     await new Promise((r) => setTimeout(r, 1000));
 
     // 4. Đóng gói profile capsule và upload lên GitHub repo
+    let uploadSuccess = false;
     const profileDir = path.join(rootDir, 'chrome-profile');
     if (activeSession.github_pat && fs.existsSync(profileDir)) {
       try {
@@ -281,17 +274,21 @@ export async function silentCheckout(rootDir) {
               updated_at: new Date().toISOString(),
             };
             await uploadVaultToGitHub(activeSession.github_pat, activeSession.handle, vaultData, targetRepo);
+            uploadSuccess = true;
           })(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 30000)),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 45000)),
         ]);
       } catch {
         // ignore upload failure in silent checkout
       }
     }
 
-    // 5. Xóa profile để giữ an toàn cho key, nhưng GIỮ LẠI core swep (selfDestruct: false)
-    await performCleanup(rootDir, { selfDestruct: false });
-    removeActiveSession(rootDir);
+    // 5. Xóa profile để giữ an toàn cho key CHỈ KHI UPLOAD THÀNH CÔNG (hoặc không có PAT/profile)
+    // Nếu upload bị lỗi mạng hoặc timeout, KHÔNG xóa profile để bảo toàn dữ liệu người dùng!
+    if (uploadSuccess || !activeSession.github_pat) {
+      await performCleanup(rootDir, { selfDestruct: false });
+      removeActiveSession(rootDir);
+    }
   } finally {
     try {
       if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
