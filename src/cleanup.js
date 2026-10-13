@@ -208,27 +208,32 @@ export async function performCleanup(rootDir, options = {}) {
 
     // 6. Tự hủy toàn bộ Swep nếu chạy từ thư mục cài đặt (%LOCALAPPDATA%\Swep)
     const isInstalledSwep = fs.existsSync(path.join(rootDir, 'app')) || fs.existsSync(path.join(rootDir, 'bin'));
-    if (isInstalledSwep) {
+      const binDir = path.join(rootDir, 'bin');
       const psScript = `
-Start-Sleep -Seconds 2
+Start-Sleep -Seconds 1
 
-# Gỡ Swep\\bin khỏi Registry User PATH
+# 1. Gỡ sạch Swep khỏi Registry User PATH
 try {
   $regPath = [Environment]::GetEnvironmentVariable('Path', 'User')
   if ($regPath) {
-    $items = ($regPath -split ';') | Where-Object { $_ -and $_ -notlike '*\\Swep\\bin*' -and $_ -notlike '*\\Swep\\bin' }
+    $items = ($regPath -split ';') | Where-Object { $_ -and $_ -notlike '*\\Swep*' }
     $newPath = $items -join ';'
     [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
   }
 } catch {}
 
-# Xóa triệt để toàn bộ thư mục Swep
+# 2. Xóa ngay file lệnh swep.cmd trong bin trước
+$binPath = '${binDir.replace(/'/g, "''")}'
+cmd.exe /c "rd /s /q \\"$binPath\\" >nul 2>nul"
+
+# 3. Vòng lặp xóa sạch 100% toàn bộ thư mục Swep (bao gồm app, profile, logs)
 $target = '${rootDir.replace(/'/g, "''")}'
-for ($i = 0; $i -lt 5; $i++) {
+Start-Sleep -Seconds 1
+for ($i = 0; $i -lt 8; $i++) {
   if (-not (Test-Path -LiteralPath $target)) { break }
-  cmd.exe /c "rd /s /q \\"$target\\"" 2>$null
-  Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
-  Start-Sleep -Milliseconds 800
+  cmd.exe /c "rd /s /q \\"$target\\" >nul 2>nul"
+  Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
+  Start-Sleep -Milliseconds 600
 }
 `;
       const b64 = Buffer.from(psScript, 'utf16le').toString('base64');

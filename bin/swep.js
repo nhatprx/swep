@@ -22,7 +22,7 @@ const version = '0.1.0';
 program
   .name('swep')
   .description(chalk.bold('Swep: Temporary Chrome profile with Google login'))
-  .version(version);
+  .version(version, '-v, -V, --version', 'Hiển thị phiên bản của Swep');
 
 // Register command
 program
