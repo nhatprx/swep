@@ -15,8 +15,8 @@ export async function chromeCommand(options = {}) {
   const profileDir = path.join(rootDir, 'chrome-profile');
 
   if (!fs.existsSync(profileDir)) {
-    console.log(chalk.yellow('ℹ Không tìm thấy phiên làm việc Swep nào đang mở.'));
-    console.log(chalk.dim('Hãy chạy lệnh "swep" để mở một phiên làm việc mới trước.\n'));
+    console.log(chalk.red('\n✖ Chưa tìm thấy key hay phiên làm việc nào trên máy.'));
+    console.log(chalk.white('Vui lòng mở bằng: ') + chalk.bold.cyan('swep <mã>') + chalk.white(' (hoặc đăng ký: ') + chalk.bold.cyan('swep register') + chalk.white(')\n'));
     return;
   }
 
@@ -24,10 +24,9 @@ export async function chromeCommand(options = {}) {
   const cdpPort = activeSession?.cdpPort || 0;
 
   try {
-    const opened = await openSwepChrome(rootDir, 'https://myaccount.google.com', cdpPort);
+    const opened = await openSwepChrome(rootDir, 'https://www.google.com', cdpPort);
     if (opened) {
-      console.log(chalk.green.bold('✔ Đã mở lại cửa sổ Chrome chứa profile cô lập của Swep!'));
-      console.log(chalk.dim('Profile này độc lập 100% với Chrome cá nhân của chủ máy.\n'));
+      console.log(chalk.green.bold('✔ Đã mở cửa sổ Chrome của Swep!'));
     } else {
       console.log(chalk.red('Không thể mở Chrome của Swep.'));
     }

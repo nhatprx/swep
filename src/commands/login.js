@@ -50,7 +50,10 @@ import {
   recordLedger,
 } from '../cleanup.js';
 
-export async function loginCommand(options = {}) {
+export async function loginCommand(codeOrOptions, maybeOptions = {}) {
+  let passedCode = typeof codeOrOptions === 'string' ? codeOrOptions : null;
+  let options = typeof codeOrOptions === 'object' && codeOrOptions !== null ? codeOrOptions : (maybeOptions || {});
+
   printBanner();
   const rootDir = getSwepRoot(options.root);
 
@@ -58,8 +61,22 @@ export async function loginCommand(options = {}) {
     console.log(chalk.yellow('ℹ Chế độ --dry-run: chỉ in ra quy trình mà không thực thi thay đổi.\n'));
   }
 
-  // 1. Nhập mã đăng nhập
-  const inputCode = await prompt('Nhập mã đăng nhập (hoặc gõ "register" nếu chưa có mã)');
+  // Nếu không truyền mã và đã có profile trên máy: mở thẳng Chrome
+  const existingProfileDir = path.join(rootDir, 'chrome-profile');
+  if (!passedCode && fs.existsSync(existingProfileDir)) {
+    const opened = await openSwepChrome(rootDir, 'https://www.google.com');
+    if (opened) {
+      console.log(chalk.bold.green('\n✔ Đã mở lại Chrome với phiên làm việc của bạn!'));
+      console.log(chalk.white('  Khi xong việc, chỉ cần gõ: ') + chalk.bold.cyan('swep exit\n'));
+      return;
+    }
+  }
+
+  // 1. Nhập mã đăng nhập (nếu chưa truyền qua lệnh)
+  let inputCode = passedCode;
+  if (!inputCode) {
+    inputCode = await prompt('Nhập mã đăng nhập (hoặc gõ "register" nếu chưa có mã)');
+  }
   const trimmed = (inputCode || '').trim().toLowerCase();
 
   if (!trimmed || trimmed === 'register' || trimmed === 'r' || trimmed === 'new') {
@@ -231,32 +248,7 @@ export async function loginCommand(options = {}) {
     console.log(chalk.dim('   (Khi bạn xong việc và gõ "swep down", Swep sẽ tự lưu toàn bộ Profile Capsule lên GitHub!)\n'));
   }
 
-  // 7. Đồng bộ cookies định kỳ mỗi 5 giây qua CDP
-  let latestCookiesCache = initialCookies;
-  const cookiePollInterval = setInterval(async () => {
-    try {
-      const c = await getCookiesViaCDP(cdpPort);
-      if (Array.isArray(c) && c.length) {
-        latestCookiesCache = c;
-        fs.writeFileSync(path.join(rootDir, 'latest-cookies.json'), JSON.stringify(c, null, 2), 'utf8');
-      }
-    } catch {
-      // ignore
-    }
-  }, 5000);
-
-  // 8. Bật Màn hình điều khiển phiên trực tiếp (Live Session Dashboard & 2FA Ticker)
-  await startLiveSessionDashboard({
-    email: userPayload.google_email || `@${handle}`,
-    password: userPayload.google_password || '',
-    totpSecret: userPayload.totp_secret || '',
-    getLatestCookies: () => latestCookiesCache,
-    onOpenChrome: async () => {
-      await openSwepChrome(rootDir, targetUrl, cdpPort);
-    },
-    onDone: async () => {
-      clearInterval(cookiePollInterval);
-      await downCommand(options);
-    },
-  });
+  console.log(chalk.bold.green(`\n✔ Chrome đã mở sẵn sàng!`));
+  console.log(chalk.white(`  Tài khoản: `) + chalk.bold.cyan(userPayload.google_email || `@${handle}`));
+  console.log(chalk.white(`  Khi làm việc xong, chỉ cần gõ: `) + chalk.bold.cyan(`swep exit\n`));
 }

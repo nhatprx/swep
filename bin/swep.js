@@ -33,12 +33,12 @@ program
 
 // Login/up command (default)
 program
-  .command('up', { isDefault: true })
+  .command('up [code]', { isDefault: true })
   .alias('login')
-  .description('Đăng nhập bằng mã, xoay mã, mở Chrome (mặc định)')
+  .description('Mở Chrome theo mã người dùng (mặc định)')
   .option('--dry-run', 'Chỉ in ra, không thực hiện')
   .option('--root <path>', 'Đường dẫn thư mục gốc (mặc định: %LOCALAPPDATA%\\Swep)')
-  .action(loginCommand);
+  .action((code, options) => loginCommand(code, options));
 
 // Chrome command (re-open isolated Chrome)
 program
@@ -48,10 +48,11 @@ program
   .option('--root <path>', 'Đường dẫn thư mục gốc')
   .action(chromeCommand);
 
-// Down command
+// Exit / Down command
 program
-  .command('down')
-  .description('Dọn sạch: đóng Chrome, xóa profile, gỡ app đã cài, báo cáo')
+  .command('exit')
+  .alias('down')
+  .description('Đóng Chrome, backup lên GitHub và dọn sạch toàn bộ Swep trên máy')
   .option('--dry-run', 'Chỉ in ra, không thực hiện')
   .option('--root <path>', 'Đường dẫn thư mục gốc')
   .action(downCommand);

@@ -21,7 +21,7 @@ const execAsync = promisify(exec);
 const CAPSULE_MAGIC = Buffer.from('SWEP\x02', 'binary'); // 5 bytes
 const AEAD_ALGORITHM = 'chacha20-poly1305';
 
-// Các thư mục rác / cache tạm không cần lưu trữ
+// Các thư mục rác / cache tạm / component tĩnh tải về không cần lưu trữ
 const EXCLUDE_DIRS = new Set([
   'Cache',
   'Code Cache',
@@ -36,9 +36,42 @@ const EXCLUDE_DIRS = new Set([
   'DawnWebGPUCache',
   'Safe Browsing',
   'component_crx_cache',
+  'extensions_crx_cache',
   'shared_proto_db',
   'optimization_guide_prediction_model_downloads',
   'optimization_guide_model_metadata',
+  'optimization_guide_model_store',
+  'OptimizationGuideModelsManifest',
+  'OptimizationHints',
+  'OnDeviceHeadSuggestModel',
+  'WasmTtsEngine',
+  'ActorSafetyLists',
+  'hyphen-data',
+  'ZxcvbnData',
+  'CertificateRevocation',
+  'FileTypePolicies',
+  'FirstPartySetsPreloaded',
+  'GPUPersistentCache',
+  'MEIPreload',
+  'PKIMetadata',
+  'PrivacySandboxAttestationsPreloaded',
+  'RecoveryImproved',
+  'SafetyTips',
+  'segmentation_platform',
+  'SSLErrorAssistant',
+  'Subresource Filter',
+  'TrustTokenKeyCommitments',
+  'CaptivePortal',
+  'AmountExtractionHeuristicRegexes',
+  'OriginTrials',
+  'Crowd Deny',
+  'AutofillAiModelCache',
+  'AutofillStrikeDatabase',
+  'BudgetDatabase',
+  'chrome_cart_db',
+  'discounts_db',
+  'discount_infos_db',
+  'Feature Engagement Tracker',
 ]);
 
 // Các file lock hoặc tạm thời
@@ -54,6 +87,8 @@ const EXCLUDE_EXTS = new Set([
   '.tmp',
   '.bak',
   '.old',
+  '.pma',
+  '.dmp',
 ]);
 
 /**
