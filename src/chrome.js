@@ -181,3 +181,16 @@ export async function copyToClipboardWithAutoClear(text, timeoutSec = 25) {
     // Không làm gián đoạn luồng chính nếu clipboard lỗi
   }
 }
+
+/**
+ * Đọc nội dung hiện tại từ clipboard Windows
+ * @returns {Promise<string>}
+ */
+export async function getClipboardText() {
+  try {
+    const { stdout } = await execAsync('powershell -NoProfile -Command "Get-Clipboard"');
+    return stdout.trim();
+  } catch {
+    return '';
+  }
+}

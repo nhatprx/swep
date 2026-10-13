@@ -5,8 +5,8 @@
  */
 
 import chalk from 'chalk';
-import { printBanner, printBox, prompt, promptSecret, createSpinner } from '../ui.js';
-import { openCleanBrowserForGitHub } from '../chrome.js';
+import { printBanner, printBox, prompt, promptSecret, promptConfirm, createSpinner } from '../ui.js';
+import { openCleanBrowserForGitHub, getClipboardText } from '../chrome.js';
 import { getGitHubUser } from '../github.js';
 import { ensureVaultRepo, uploadVaultToGitHub } from '../vault.js';
 import {
@@ -42,14 +42,27 @@ export async function registerCommand(options) {
     console.log(`👉 Vui lòng mở thủ công link: ${chalk.underline.cyan(tokenUrl)}\n`);
   }
 
-  // 2. Nhận token từ người dùng
-  const githubToken = await promptSecret('Dán Personal Access Token (ghp_...) vào đây');
-  if (!githubToken || !githubToken.trim().startsWith('ghp_') && !githubToken.trim().startsWith('github_pat_')) {
-    console.log(chalk.red('Token không đúng định dạng. Hủy bỏ.'));
-    return;
+  // 2. Nhận token từ người dùng (Hỗ trợ tự động đọc từ clipboard hoặc dán)
+  let cleanToken = '';
+  const clipboardText = await getClipboardText();
+  if (clipboardText && (clipboardText.startsWith('ghp_') || clipboardText.startsWith('github_pat_'))) {
+    console.log(chalk.green(`✔ Đã tự động nhận diện token từ Clipboard: ${chalk.bold(clipboardText.slice(0, 8))}...`));
+    const useClip = await promptConfirm('Sử dụng luôn token này?', true);
+    if (useClip) {
+      cleanToken = clipboardText;
+    }
   }
 
-  const cleanToken = githubToken.trim();
+  if (!cleanToken) {
+    console.log(chalk.cyan('👉 Mẹo dán trên PowerShell: Bấm Click Chuột Phải hoặc Shift + Insert để dán.'));
+    const entered = await prompt('Dán Personal Access Token vào đây');
+    cleanToken = (entered || '').trim();
+  }
+
+  if (!cleanToken || (!cleanToken.startsWith('ghp_') && !cleanToken.startsWith('github_pat_'))) {
+    console.log(chalk.red('Token không đúng định dạng (cần bắt đầu bằng ghp_...). Hủy bỏ.'));
+    return;
+  }
 
   // Xác thực token và lấy thông tin người dùng
   const spinUser = createSpinner('Đang xác thực tài khoản GitHub...');

@@ -94,9 +94,11 @@ export function promptSecret(questionText) {
           password = password.slice(0, -1);
           process.stdout.write('\b \b');
         }
+      } else if (char === '\u0016') {
+        // Bỏ qua ký tự điều khiển Ctrl+V trong raw mode
       } else {
         password += char;
-        process.stdout.write('*');
+        process.stdout.write('*'.repeat(char.length));
       }
     };
 
