@@ -4,7 +4,8 @@
  */
 
 import chalk from 'chalk';
-import { printBanner, printBox, prompt, createSpinner } from '../ui.js';
+import { printBanner, printBox, prompt, promptConfirm, createSpinner } from '../ui.js';
+import { registerCommand } from './register.js';
 import {
   deriveSeed,
   hkdf,
@@ -36,9 +37,15 @@ export async function loginCommand(options) {
   }
 
   // 1. Nhập mã đăng nhập
-  const inputCode = await prompt('Nhập mã đăng nhập (dạng username-XXX-XXX)');
-  if (!inputCode) {
-    console.log(chalk.red('Mã không được để trống. Hủy bỏ.'));
+  const inputCode = await prompt('Nhập mã đăng nhập (hoặc gõ "register" nếu chưa có mã)');
+  const trimmed = (inputCode || '').trim().toLowerCase();
+
+  if (!trimmed || trimmed === 'register' || trimmed === 'r' || trimmed === 'new') {
+    const wantRegister = await promptConfirm('Bạn chưa có mã? Bạn có muốn đăng ký tài khoản Swep mới ngay bây giờ không?', true);
+    if (wantRegister) {
+      return registerCommand(options);
+    }
+    console.log(chalk.dim('\nĐể đăng ký mã mới sau, hãy chạy: swep register trên máy tính cá nhân tin cậy của bạn.'));
     return;
   }
 
