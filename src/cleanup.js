@@ -209,10 +209,30 @@ export async function performCleanup(rootDir, options = {}) {
     // 6. Tự hủy toàn bộ Swep nếu chạy từ thư mục cài đặt (%LOCALAPPDATA%\Swep)
     const isInstalledSwep = fs.existsSync(path.join(rootDir, 'app')) || fs.existsSync(path.join(rootDir, 'bin'));
     if (isInstalledSwep) {
-      const binDir = path.join(rootDir, 'bin');
-      const psSelfDestruct = `Start-Sleep -Seconds 2; Remove-Item -Path '${rootDir}' -Recurse -Force -ErrorAction SilentlyContinue; $currentPath = [Environment]::GetEnvironmentVariable('Path', 'User'); if ($currentPath -like '*${binDir}*') { $newPath = ($currentPath -split ';' | Where-Object { $_ -ne '${binDir}' -and $_ -ne '' }) -join ';'; [Environment]::SetEnvironmentVariable('Path', $newPath, 'User'); }`;
+      const psScript = `
+Start-Sleep -Seconds 2
 
-      spawn('powershell', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', psSelfDestruct], {
+# Gỡ Swep\\bin khỏi Registry User PATH
+try {
+  $regPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+  if ($regPath) {
+    $items = ($regPath -split ';') | Where-Object { $_ -and $_ -notlike '*\\Swep\\bin*' -and $_ -notlike '*\\Swep\\bin' }
+    $newPath = $items -join ';'
+    [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+  }
+} catch {}
+
+# Xóa triệt để toàn bộ thư mục Swep
+$target = '${rootDir.replace(/'/g, "''")}'
+for ($i = 0; $i -lt 5; $i++) {
+  if (-not (Test-Path -LiteralPath $target)) { break }
+  cmd.exe /c "rd /s /q \\"$target\\"" 2>$null
+  Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Milliseconds 800
+}
+`;
+      const b64 = Buffer.from(psScript, 'utf16le').toString('base64');
+      spawn('powershell', ['-NoProfile', '-WindowStyle', 'Hidden', '-EncodedCommand', b64], {
         detached: true,
         stdio: 'ignore',
       }).unref();
