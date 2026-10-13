@@ -36,13 +36,13 @@ export async function doctorCommand(options) {
     detail: `${nodeVersion} (>= 18.0.0 required)`,
   });
 
-  // 3. Google Chrome
-  const chromePath = await findChromePath();
+  // 3. Browser
+  const browserPath = await findChromePath();
   checks.push({
-    title: 'Google Chrome',
-    ok: !!chromePath,
-    detail: chromePath ? chromePath : 'not installed (will auto-install via winget)',
-    warn: !chromePath,
+    title: 'Supported browser',
+    ok: !!browserPath,
+    detail: browserPath ? browserPath : 'not installed (will auto-install via winget)',
+    warn: !browserPath,
   });
 
   // 4. Winget

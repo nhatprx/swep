@@ -58,15 +58,13 @@ swep <login-code>
 
 Swep retrieves your encrypted vault, restores the supported Profile Capsule data, and launches Chrome with an isolated profile.
 
-### 3. Reopen Chrome
+### 3. Reopen Browser
 
 If you close the browser accidentally, run:
 
 ```powershell
-swep chrome
+swep open
 ```
-
-Alias: `swep open`
 
 ### 4. Finish Your Session
 
@@ -78,14 +76,14 @@ swep exit
 
 Alias: `swep down`
 
-Swep is designed to back up your encrypted session data, close Chrome, and remove its managed local installation files.
+Swep backs up your encrypted session data, closes the browser, and removes all local workspace files.
 
 ## CLI Commands
 
 | Command | Alias | Description |
 |---|---|---|
-| `swep <code>` | `swep up`, `swep login` | Restore a session and launch an isolated Chrome profile. |
-| `swep chrome` | `swep open` | Reopen the current Swep Chrome session. |
+| `swep <code>` | `swep up`, `swep login` | Restore a session and launch an isolated browser profile (Chrome, Edge, Brave). |
+| `swep open` | `swep chrome` | Reopen the active Swep browser session. |
 | `swep exit` | `swep down` | Back up session data and clean up the local workspace. |
 | `swep register` | — | Initialize the account and encrypted vault. |
 | `swep -v` | `swep --version` | Display the current version. |

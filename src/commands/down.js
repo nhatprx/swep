@@ -7,8 +7,8 @@
 
 import fs from 'fs';
 import path from 'path';
-import chalkCol from 'chalk';
-import { getSwepRoot, killSwepChromeProcesses } from '../chrome.js';
+import ora from 'ora';
+import { getSwepRoot, killSwepBrowserProcesses } from '../chrome.js';
 import { performCleanup } from '../cleanup.js';
 import { readActiveSession, removeActiveSession } from '../bridge.js';
 import { uploadVaultToGitHub, uploadProfileCapsuleToGitHub } from '../vault.js';
@@ -18,6 +18,12 @@ import { packProfileDirectory, encryptCapsule } from '../profile.js';
 
 export async function downCommand(options = {}) {
   const rootDir = getSwepRoot(options.root);
+
+  const spinner = ora({
+    text: 'Closing browser...',
+    color: 'cyan',
+    spinner: 'dots',
+  }).start();
 
   // 1. Thu thập cookies từ RAM Chrome trước khi đóng
   const activeSession = readActiveSession(rootDir);
@@ -81,12 +87,13 @@ export async function downCommand(options = {}) {
       }
     }
     // 2. Tắt các tiến trình phụ còn sót lại
-    await killSwepChromeProcesses(rootDir);
+    await killSwepBrowserProcesses(rootDir);
     await new Promise((r) => setTimeout(r, 1200));
   }
 
   // 3. ĐÓNG GÓI VÀ MÃ HÓA PROFILE CAPSULE (Local Storage, LevelDB, Preferences, Cookies)
   if (activeSession && activeSession.github_pat && fs.existsSync(profileDir) && !options.dryRun) {
+    spinner.text = 'Encrypting and saving session to GitHub...';
     try {
       const metadata = {
         handle: activeSession.handle,
@@ -129,9 +136,11 @@ export async function downCommand(options = {}) {
   }
 
   // 4. Clean up workspace
+  spinner.text = 'Cleaning up workspace files...';
   try {
     await performCleanup(rootDir, { dryRun: !!options.dryRun });
     removeActiveSession(rootDir);
+    spinner.stop();
 
     if (options.dryRun) {
       console.log('[dry-run] Workspace cleanup simulated.');
@@ -139,6 +148,7 @@ export async function downCommand(options = {}) {
       console.log('Workspace saved and removed.');
     }
   } catch (err) {
+    spinner.stop();
     console.error(`error: cleanup failed: ${err.message}`);
   }
 }

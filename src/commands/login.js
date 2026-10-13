@@ -1,19 +1,6 @@
-/**
- * Command: login / up (default command)
- * Đăng nhập bằng mã: Tải vault từ GitHub của user (Zero-Server Architecture),
- * giải mã, tự động nạp Session Capsule qua CDP (nếu đã có) và mở Chrome với profile cô lập
- */
-
 import fs from 'fs';
 import path from 'path';
-import chalk from 'chalk';
-import {
-  printBanner,
-  prompt,
-  promptConfirm,
-  createSpinner,
-} from '../ui.js';
-import { registerCommand } from './register.js';
+import ora from 'ora';
 import {
   deriveSeed,
   hkdf,
@@ -23,10 +10,10 @@ import {
 import { fetchVault, fetchProfileCapsuleFromGitHub } from '../vault.js';
 import { defaultGate } from '../gate.js';
 import {
-  findChromePath,
+  findBrowserPath,
   installChromeViaWinget,
-  launchIsolatedChrome,
-  openSwepChrome,
+  launchIsolatedBrowser,
+  openSwepBrowser,
   getSwepRoot,
 } from '../chrome.js';
 import {
@@ -57,10 +44,10 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
     console.log('[dry-run] Simulating workspace launch...');
   }
 
-  // If no code provided and active profile exists: reopen Chrome
+  // If no code provided and active profile exists: reopen browser
   const existingProfileDir = path.join(rootDir, 'chrome-profile');
   if (!passedCode && fs.existsSync(existingProfileDir)) {
-    const opened = await openSwepChrome(rootDir, 'https://www.google.com');
+    const opened = await openSwepBrowser(rootDir, 'https://www.google.com');
     if (opened) {
       console.log("Workspace reopened. Run 'swep exit' when done.");
       return;
@@ -85,6 +72,12 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
   const rawCode = parts.slice(1).join('-');
   const normalizedCode = normalizeCode(rawCode);
 
+  const spinner = ora({
+    text: 'Fetching workspace vault...',
+    color: 'cyan',
+    spinner: 'dots',
+  }).start();
+
   let userPayload;
   let dekBuffer;
   let vaultData;
@@ -92,6 +85,8 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
   // 1. Fetch and decrypt vault
   try {
     vaultData = await fetchVault(handle);
+    spinner.text = 'Deriving encryption keys...';
+
     const seed = await deriveSeed(normalizedCode, handle);
     const codeKey = hkdf(seed, 'swep/wrap');
 
@@ -110,29 +105,29 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
       userPayload = aead_decrypt(dekBuffer, loginRes.payload, `${handle}/1`);
       vaultData = loginRes;
     } catch {
+      spinner.stop();
       console.error(`error: authentication failed (${vaultErr.message})`);
       return;
     }
   }
 
-  // 2. Ensure Google Chrome is installed
-  let chromeExe = await findChromePath();
-  let preexistingChrome = true;
+  // 2. Detect browser (Chrome, Edge, Brave, etc.)
+  spinner.text = 'Detecting browser environment...';
+  let browserExe = await findBrowserPath(options.browser);
+  let preexistingBrowser = true;
 
-  if (!chromeExe) {
-    process.stdout.write('Installing Google Chrome via winget... ');
+  if (!browserExe) {
+    spinner.text = 'Installing Google Chrome via winget...';
     const installed = await installChromeViaWinget();
     if (installed) {
-      chromeExe = await findChromePath();
-      preexistingChrome = false;
-      console.log('done.');
-    } else {
-      console.log('failed.');
+      browserExe = await findBrowserPath();
+      preexistingBrowser = false;
     }
   }
 
-  if (!chromeExe) {
-    console.error('error: Google Chrome is required. Please install Google Chrome.');
+  if (!browserExe) {
+    spinner.stop();
+    console.error('error: no supported browser found (Chrome, Edge, Brave).');
     return;
   }
 
@@ -140,16 +135,17 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
   takeBeforeSnapshot(rootDir, {
     handle,
     email: userPayload.google_email || handle,
-    chromeExe,
+    browserExe,
   });
 
   recordLedger(rootDir, {
-    action: preexistingChrome ? 'use_chrome' : 'install_chrome',
-    preexisting: preexistingChrome,
-    chromeExe,
+    action: preexistingBrowser ? 'use_browser' : 'install_browser',
+    preexisting: preexistingBrowser,
+    browserExe,
   });
 
   // 4. Restore Profile Capsule if available
+  spinner.text = 'Restoring workspace session...';
   const profileDir = path.join(rootDir, 'chrome-profile');
   let initialCookies = (userPayload.session && Array.isArray(userPayload.session.cookies))
     ? userPayload.session.cookies
@@ -190,21 +186,23 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
     userPayload,
   });
 
-  // 5. Launch Chrome
+  // 5. Launch Browser
+  spinner.text = 'Launching browser...';
   if (restoredCapsule) {
-    await launchIsolatedChrome(chromeExe, rootDir, targetUrl, cdpPort);
+    await launchIsolatedBrowser(browserExe, rootDir, targetUrl, cdpPort);
   } else if (initialCookies.length > 0) {
-    await launchIsolatedChrome(chromeExe, rootDir, 'about:blank', cdpPort);
+    await launchIsolatedBrowser(browserExe, rootDir, 'about:blank', cdpPort);
     try {
       await injectCookiesViaCDP(cdpPort, initialCookies);
       await navigatePageViaCDP(cdpPort, targetUrl);
     } catch {
-      await openSwepChrome(rootDir, targetUrl, cdpPort);
+      await openSwepBrowser(rootDir, targetUrl, cdpPort);
     }
   } else {
-    await launchIsolatedChrome(chromeExe, rootDir, targetUrl, cdpPort);
+    await launchIsolatedBrowser(browserExe, rootDir, targetUrl, cdpPort);
   }
 
+  spinner.stop();
   const account = userPayload.google_email || handle;
   console.log(`Workspace ready for ${account}. Run 'swep exit' when done.`);
 }

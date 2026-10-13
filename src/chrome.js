@@ -13,14 +13,62 @@ const execAsync = promisify(exec);
 /**
  * Các đường dẫn Chrome mặc định trên Windows
  */
-const CHROME_PATHS = [
-  path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'Google\\Chrome\\Application\\chrome.exe'),
-  path.join(process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)', 'Google\\Chrome\\Application\\chrome.exe'),
-  path.join(process.env.LOCALAPPDATA || 'C:\\Users\\Default\\AppData\\Local', 'Google\\Chrome\\Application\\chrome.exe'),
+/**
+ * Supported Chromium-based browsers on Windows
+ */
+const BROWSER_DEFINITIONS = [
+  {
+    id: 'chrome',
+    name: 'Google Chrome',
+    exec: 'chrome.exe',
+    paths: [
+      path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'Google\\Chrome\\Application\\chrome.exe'),
+      path.join(process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)', 'Google\\Chrome\\Application\\chrome.exe'),
+      path.join(process.env.LOCALAPPDATA || 'C:\\Users\\Default\\AppData\\Local', 'Google\\Chrome\\Application\\chrome.exe'),
+    ],
+  },
+  {
+    id: 'edge',
+    name: 'Microsoft Edge',
+    exec: 'msedge.exe',
+    paths: [
+      path.join(process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)', 'Microsoft\\Edge\\Application\\msedge.exe'),
+      path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'Microsoft\\Edge\\Application\\msedge.exe'),
+      path.join(process.env.LOCALAPPDATA || 'C:\\Users\\Default\\AppData\\Local', 'Microsoft\\Edge\\Application\\msedge.exe'),
+    ],
+  },
+  {
+    id: 'brave',
+    name: 'Brave Browser',
+    exec: 'brave.exe',
+    paths: [
+      path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'BraveSoftware\\Brave-Browser\\Application\\brave.exe'),
+      path.join(process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)', 'BraveSoftware\\Brave-Browser\\Application\\brave.exe'),
+      path.join(process.env.LOCALAPPDATA || 'C:\\Users\\Default\\AppData\\Local', 'BraveSoftware\\Brave-Browser\\Application\\brave.exe'),
+    ],
+  },
+  {
+    id: 'vivaldi',
+    name: 'Vivaldi',
+    exec: 'vivaldi.exe',
+    paths: [
+      path.join(process.env.LOCALAPPDATA || 'C:\\Users\\Default\\AppData\\Local', 'Vivaldi\\Application\\vivaldi.exe'),
+      path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'Vivaldi\\Application\\vivaldi.exe'),
+    ],
+  },
+  {
+    id: 'opera',
+    name: 'Opera',
+    exec: 'opera.exe',
+    paths: [
+      path.join(process.env.LOCALAPPDATA || 'C:\\Users\\Default\\AppData\\Local', 'Programs\\Opera\\opera.exe'),
+      path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'Opera\\opera.exe'),
+    ],
+  },
 ];
 
 /**
- * Lấy thư mục gốc mặc định của Swep (%LOCALAPPDATA%\Swep)
+ * Get Swep root directory (%LOCALAPPDATA%\Swep)
  * @param {string} [customRoot]
  * @returns {string}
  */
@@ -33,32 +81,48 @@ export function getSwepRoot(customRoot) {
 }
 
 /**
- * Tìm đường dẫn chrome.exe trên máy
+ * Find available browser executable on Windows (Chrome, Edge, Brave, etc.)
+ * @param {string} [preferred]
  * @returns {Promise<string|null>}
  */
-export async function findChromePath() {
-  for (const p of CHROME_PATHS) {
-    if (fs.existsSync(p)) {
-      return p;
+export async function findBrowserPath(preferred = '') {
+  let list = BROWSER_DEFINITIONS;
+  if (preferred) {
+    const prefNorm = preferred.toLowerCase();
+    const foundPref = BROWSER_DEFINITIONS.find((b) => b.id === prefNorm || b.name.toLowerCase().includes(prefNorm));
+    if (foundPref) {
+      list = [foundPref, ...BROWSER_DEFINITIONS.filter((b) => b.id !== foundPref.id)];
     }
   }
 
-  // Thử tìm qua lệnh `where chrome`
-  try {
-    const { stdout } = await execAsync('where chrome');
-    const firstLine = stdout.trim().split(/\r?\n/)[0];
-    if (firstLine && fs.existsSync(firstLine)) {
-      return firstLine;
+  for (const b of list) {
+    for (const p of b.paths) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
     }
-  } catch {
-    // Không tìm thấy trong PATH
+  }
+
+  // Fallback to PATH commands
+  for (const b of list) {
+    try {
+      const { stdout } = await execAsync(`where ${b.id}`);
+      const firstLine = stdout.trim().split(/\r?\n/)[0];
+      if (firstLine && fs.existsSync(firstLine)) {
+        return firstLine;
+      }
+    } catch {
+      // ignore
+    }
   }
 
   return null;
 }
 
+export const findChromePath = findBrowserPath;
+
 /**
- * Cài đặt Google Chrome qua winget
+ * Install Google Chrome via winget (if no browser available)
  * @returns {Promise<boolean>}
  */
 export async function installChromeViaWinget() {
@@ -73,14 +137,14 @@ export async function installChromeViaWinget() {
 }
 
 /**
- * Khởi chạy Chrome với profile riêng biệt
- * @param {string} chromeExe
+ * Launch isolated browser with dedicated user profile
+ * @param {string} browserExe
  * @param {string} rootDir
  * @param {string} [targetUrl]
  * @param {number} [cdpPort]
  * @returns {Promise<import('child_process').ChildProcess>}
  */
-export async function launchIsolatedChrome(chromeExe, rootDir, targetUrl = 'https://accounts.google.com', cdpPort = 0) {
+export async function launchIsolatedBrowser(browserExe, rootDir, targetUrl = 'https://accounts.google.com', cdpPort = 0) {
   const profileDir = path.join(rootDir, 'chrome-profile');
   if (!fs.existsSync(profileDir)) {
     fs.mkdirSync(profileDir, { recursive: true });
@@ -101,7 +165,7 @@ export async function launchIsolatedChrome(chromeExe, rootDir, targetUrl = 'http
 
   args.push(targetUrl);
 
-  const child = spawn(chromeExe, args, {
+  const child = spawn(browserExe, args, {
     detached: true,
     stdio: 'ignore',
   });
@@ -110,36 +174,39 @@ export async function launchIsolatedChrome(chromeExe, rootDir, targetUrl = 'http
   return child;
 }
 
+export const launchIsolatedChrome = launchIsolatedBrowser;
+
 /**
- * Mở lại cửa sổ Chrome của Swep với profile cô lập
+ * Reopen active workspace browser window
  * @param {string} rootDir
  * @param {string} [targetUrl]
  * @param {number} [cdpPort]
  * @returns {Promise<boolean>}
  */
-export async function openSwepChrome(rootDir, targetUrl = 'https://myaccount.google.com', cdpPort = 0) {
-  const chromeExe = await findChromePath();
-  if (!chromeExe) {
-    throw new Error('Không tìm thấy Google Chrome trên máy.');
+export async function openSwepBrowser(rootDir, targetUrl = 'https://myaccount.google.com', cdpPort = 0) {
+  const browserExe = await findBrowserPath();
+  if (!browserExe) {
+    throw new Error('No supported browser found.');
   }
   const profileDir = path.join(rootDir, 'chrome-profile');
   if (!fs.existsSync(profileDir)) {
     return false;
   }
-  await launchIsolatedChrome(chromeExe, rootDir, targetUrl, cdpPort);
+  await launchIsolatedBrowser(browserExe, rootDir, targetUrl, cdpPort);
   return true;
 }
 
+export const openSwepChrome = openSwepBrowser;
+
 /**
- * Mở một cửa sổ Chromium hoàn toàn mới, độc lập không dính dữ liệu cũ
- * dùng riêng cho quy trình xác thực GitHub / setup
+ * Open a clean browser window for GitHub setup
  * @param {string} targetUrl
  * @returns {Promise<import('child_process').ChildProcess>}
  */
 export async function openCleanBrowserForGitHub(targetUrl = 'https://github.com/settings/tokens/new?description=Swep+Vault+Access&scopes=public_repo') {
-  const chromeExe = await findChromePath();
-  if (!chromeExe) {
-    throw new Error('Không tìm thấy Google Chrome trên máy.');
+  const browserExe = await findBrowserPath();
+  if (!browserExe) {
+    throw new Error('No supported browser found.');
   }
 
   const tempAuthProfile = path.join(process.env.TEMP || 'C:\\Temp', `swep-auth-${Date.now()}`);
@@ -154,7 +221,7 @@ export async function openCleanBrowserForGitHub(targetUrl = 'https://github.com/
     targetUrl,
   ];
 
-  const child = spawn(chromeExe, args, {
+  const child = spawn(browserExe, args, {
     detached: true,
     stdio: 'ignore',
   });
@@ -164,28 +231,21 @@ export async function openCleanBrowserForGitHub(targetUrl = 'https://github.com/
 }
 
 /**
- * Tìm và đóng các tiến trình Chrome ĐANG DÙNG profile của Swep
- * Tuyệt đối không đóng tiến trình Chrome của người dùng chính
+ * Kill active isolated Swep browser processes (Chrome, Edge, Brave, etc.)
+ * Does not terminate the host user's personal browsers
  * @param {string} rootDir
- * @returns {Promise<number>} Số tiến trình đã đóng
+ * @returns {Promise<number>}
  */
-export async function killSwepChromeProcesses(rootDir) {
+export async function killSwepBrowserProcesses(rootDir) {
   let killedCount = 0;
 
   try {
     const escapedRoot = rootDir ? rootDir.replace(/'/g, "''") : 'chrome-profile';
     const psScript = `
-$procs = Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" | Where-Object { $_.CommandLine -like '*${escapedRoot}*' }
-# 1. Thử gửi tín hiệu đóng nhẹ nhàng trước
+$targetNames = @('chrome.exe', 'msedge.exe', 'brave.exe', 'opera.exe', 'vivaldi.exe')
+$procs = Get-CimInstance Win32_Process | Where-Object { ($_.Name -in $targetNames) -and ($_.CommandLine -like '*${escapedRoot}*' -or $_.CommandLine -like '*chrome-profile*') }
+
 foreach ($p in $procs) {
-    try {
-        taskkill /PID $p.ProcessId /T | Out-Null
-    } catch {}
-}
-Start-Sleep -Milliseconds 600
-# 2. Nếu còn tiến trình kẹt thì mới cưỡng chế
-$remainingProcs = Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" | Where-Object { $_.CommandLine -like '*chrome-profile*' }
-foreach ($p in $remainingProcs) {
     try {
         taskkill /PID $p.ProcessId /T /F | Out-Null
         $p.ProcessId
@@ -196,22 +256,14 @@ foreach ($p in $remainingProcs) {
     const { stdout } = await execAsync(`powershell -NoProfile -EncodedCommand ${b64}`);
     const pids = stdout.trim().split(/\r?\n/).filter((l) => /^\d+$/.test(l.trim()));
     killedCount = pids.length;
-
-    // Chờ tối đa 5s cho đến khi toàn bộ tiến trình Chrome của Swep tắt hẳn
-    for (let i = 0; i < 10; i++) {
-      const checkScript = `(Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" | Where-Object { $_.CommandLine -like '*chrome-profile*' }).Count`;
-      const b64Check = Buffer.from(checkScript, 'utf16le').toString('base64');
-      const { stdout: checkOut } = await execAsync(`powershell -NoProfile -EncodedCommand ${b64Check}`);
-      const remaining = parseInt(checkOut.trim(), 10) || 0;
-      if (remaining === 0) break;
-      await new Promise((r) => setTimeout(r, 400));
-    }
-  } catch (err) {
-    // Lỗi có thể xảy ra nếu không có tiến trình nào khớp
+  } catch {
+    // ignore
   }
 
   return killedCount;
 }
+
+export const killSwepChromeProcesses = killSwepBrowserProcesses;
 
 /**
  * Copy chuỗi vào clipboard và tự động xóa sau `timeoutSec` giây

@@ -14,14 +14,15 @@ import {
   recoverCommand,
   revokeCommand,
   doctorCommand,
+  openCommand,
   chromeCommand,
 } from '../src/commands/index.js';
 
-const version = '0.1.2';
+const version = '0.1.3';
 
 program
   .name('swep')
-  .description('Ephemeral workspace manager with isolated Chrome profiles')
+  .description('Ephemeral workspace manager with isolated browser profiles')
   .version(version, '-v, -V, --version', 'Show version');
 
 // Default command: swep <code>
@@ -29,17 +30,18 @@ program
   .command('up [code]', { isDefault: true })
   .alias('login')
   .description('Launch workspace with login code (default)')
+  .option('--browser <name>', 'Preferred browser (chrome, edge, brave)')
   .option('--dry-run', 'Print actions without executing')
   .option('--root <path>', 'Workspace root directory')
   .action((code, options) => loginCommand(code, options));
 
-// Chrome command
+// Open command: swep open
 program
-  .command('chrome')
-  .alias('open')
-  .description('Reopen active Chrome workspace window')
+  .command('open')
+  .alias('chrome')
+  .description('Reopen active workspace browser window')
   .option('--root <path>', 'Workspace root directory')
-  .action(chromeCommand);
+  .action(openCommand);
 
 // Exit command
 program
