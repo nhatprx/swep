@@ -141,12 +141,6 @@ export async function loginCommand(options) {
     console.log(`   Mã 2FA:   ${chalk.bold.yellow(currentTotp)} ${chalk.dim('(Tự đổi sau 30s)')}`);
   }
 
-  // Tự động copy mật khẩu vào clipboard có auto-clear
-  if (userPayload.google_password) {
-    await copyToClipboardWithAutoClear(userPayload.google_password, 30);
-    console.log(chalk.dim('   (Mật khẩu đã được copy vào clipboard, tự xóa sau 30 giây)'));
-  }
-
   // 6. Khởi chạy Chrome với profile riêng biệt
   console.log(chalk.green('\n✔ Đang mở Chrome với profile tạm thời của Swep...'));
   await launchIsolatedChrome(chromeExe, rootDir, 'https://accounts.google.com');
@@ -156,7 +150,10 @@ export async function loginCommand(options) {
   if (filled) {
     spinAuto.succeed(chalk.green('Đã tự động gửi thông tin đăng nhập Google thành công!'));
   } else {
-    spinAuto.info(chalk.yellow('Đã chuẩn bị thông tin (bạn có thể bấm Ctrl+V để dán mật khẩu nếu cần).'));
+    spinAuto.info(chalk.yellow('Không thể tự động điền (Mật khẩu đã được copy vào Clipboard để bạn tự dán).'));
+    if (userPayload.google_password) {
+      await copyToClipboardWithAutoClear(userPayload.google_password, 30);
+    }
   }
 
   console.log(chalk.green.bold('\n✔ Sẵn sàng làm việc!'));

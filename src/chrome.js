@@ -216,37 +216,43 @@ $wshell = New-Object -ComObject wscript.shell
 
 function Send-Paste {
     param([string]$Text)
-    Set-Clipboard -Value $Text
+    for ($i = 0; $i -lt 5; $i++) {
+        try {
+            [System.Windows.Forms.Clipboard]::SetText($Text)
+            break
+        } catch {
+            Start-Sleep -Milliseconds 150
+        }
+    }
+    Start-Sleep -Milliseconds 300
+    # Kích hoạt lại Chrome trước khi dán
+    $wshell.AppActivate('Google')
+    $wshell.AppActivate('Chrome')
     Start-Sleep -Milliseconds 300
     [System.Windows.Forms.SendKeys]::SendWait('^v')
-    Start-Sleep -Milliseconds 400
+    Start-Sleep -Milliseconds 500
     [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
 }
 
-# 1. Chờ Chrome mở và tải trang đăng nhập Google
-Start-Sleep -Seconds 4
-
-# Kích hoạt cửa sổ Chrome
-$wshell.AppActivate('Google')
-$wshell.AppActivate('Chrome')
-Start-Sleep -Milliseconds 800
+# 1. Chờ Chrome khởi động và tải hoàn tất trang đăng nhập Google
+Start-Sleep -Seconds 6
 
 # 2. Điền Email
 Send-Paste -Text "${escapedEmail}"
 
-# 3. Chờ Google chuyển sang trang mật khẩu
-Start-Sleep -Seconds 3
+# 3. Chờ Google xác nhận email và chuyển sang trang mật khẩu
+Start-Sleep -Seconds 4
 Send-Paste -Text "${escapedPassword}"
 
-# 4. Điền mã 2FA TOTP nếu có
+# 4. Chờ trang xác thực 2FA TOTP nếu có
 if ("${escapedTotp}") {
-    Start-Sleep -Seconds 3
+    Start-Sleep -Seconds 4
     Send-Paste -Text "${escapedTotp}"
 }
 
-# 5. Xóa sạch mật khẩu khỏi clipboard sau khi đăng nhập
-Start-Sleep -Seconds 1
-Set-Clipboard -Value ""
+# 5. Xóa sạch clipboard sau khi hoàn tất
+Start-Sleep -Seconds 2
+[System.Windows.Forms.Clipboard]::Clear()
 `;
 
   try {
