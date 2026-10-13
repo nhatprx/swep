@@ -135,13 +135,14 @@ export async function removeDirectoryRecursive(dirPath, retries = 5) {
  * @returns {Promise<{ killedProcesses: number, removedFiles: string[], uninstalledChrome: boolean }>}
  */
 export async function performCleanup(rootDir, options = {}) {
-  const { dryRun = false } = options;
+  const { dryRun = false, selfDestruct = true } = options;
   const ledger = readLedger(rootDir);
 
   const report = {
     killedProcesses: 0,
     removedFiles: [],
     uninstalledChrome: false,
+    uninstalledSwep: false,
   };
 
   // 1. Đóng Chrome chỉ của Swep
@@ -206,13 +207,30 @@ export async function performCleanup(rootDir, options = {}) {
       report.removedFiles.push(logsDir);
     }
 
-    // 6. Tự hủy toàn bộ Swep trên hệ thống (Self-Destruction)
-    const localAppData = process.env.LOCALAPPDATA || path.join(process.env.USERPROFILE || 'C:\\', 'AppData', 'Local');
-    const defaultSwepDir = path.join(localAppData, 'Swep').toLowerCase();
-    const isInstalledSwep =
-      (path.resolve(rootDir).toLowerCase() === defaultSwepDir) ||
-      fs.existsSync(path.join(rootDir, 'bin', 'swep.cmd')) ||
-      fs.existsSync(path.join(rootDir, 'app'));
+    // Xóa các file session và extension tạm thời
+    for (const f of ['latest-cookies.json', 'active-session.json', 'watchdog.pid']) {
+      const fp = path.join(rootDir, f);
+      if (fs.existsSync(fp)) {
+        try {
+          fs.unlinkSync(fp);
+          report.removedFiles.push(fp);
+        } catch {}
+      }
+    }
+    const extDir = path.join(rootDir, 'extension');
+    if (fs.existsSync(extDir)) {
+      await removeDirectoryRecursive(extDir);
+      report.removedFiles.push(extDir);
+    }
+
+    // 6. Tự hủy toàn bộ Swep trên hệ thống (Self-Destruction) chỉ khi selfDestruct = true
+    if (selfDestruct) {
+      const localAppData = process.env.LOCALAPPDATA || path.join(process.env.USERPROFILE || 'C:\\', 'AppData', 'Local');
+      const defaultSwepDir = path.join(localAppData, 'Swep').toLowerCase();
+      const isInstalledSwep =
+        (path.resolve(rootDir).toLowerCase() === defaultSwepDir) ||
+        fs.existsSync(path.join(rootDir, 'bin', 'swep.cmd')) ||
+        fs.existsSync(path.join(rootDir, 'app'));
 
     if (isInstalledSwep) {
       const binDir = path.join(rootDir, 'bin');
@@ -307,6 +325,7 @@ if (Test-Path $npmDir) {
       report.removedFiles.push(defaultSwepDir);
     } catch {
       // ignore
+    }
     }
   }
 

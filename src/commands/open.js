@@ -6,12 +6,18 @@
 import fs from 'fs';
 import path from 'path';
 import ora from 'ora';
+import chalk from 'chalk';
 import { getSwepRoot, openSwepBrowser } from '../chrome.js';
-import { readActiveSession } from '../bridge.js';
+import { readActiveSession, maskKey } from '../bridge.js';
 
 export async function openCommand(options = {}) {
   const rootDir = getSwepRoot(options.root);
   const profileDir = path.join(rootDir, 'chrome-profile');
+  const activeSession = readActiveSession(rootDir);
+
+  if (activeSession && (activeSession.loginCode || activeSession.handle)) {
+    console.log(chalk.dim('key-id: ') + chalk.cyan(maskKey(activeSession.loginCode || activeSession.handle)));
+  }
 
   if (!fs.existsSync(profileDir)) {
     console.error("error: no active workspace found. Run 'swep <code>' to start.");
@@ -24,7 +30,6 @@ export async function openCommand(options = {}) {
     spinner: 'dots',
   }).start();
 
-  const activeSession = readActiveSession(rootDir);
   const cdpPort = activeSession?.cdpPort || 0;
 
   try {

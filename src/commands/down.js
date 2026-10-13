@@ -8,9 +8,10 @@
 import fs from 'fs';
 import path from 'path';
 import ora from 'ora';
+import chalk from 'chalk';
 import { getSwepRoot, killSwepBrowserProcesses } from '../chrome.js';
 import { performCleanup } from '../cleanup.js';
-import { readActiveSession, removeActiveSession } from '../bridge.js';
+import { readActiveSession, removeActiveSession, maskKey } from '../bridge.js';
 import { uploadVaultToGitHub, uploadProfileCapsuleToGitHub } from '../vault.js';
 import { aead_encrypt } from '../crypto.js';
 import { getCookiesViaCDP, closeChromeViaCDP } from '../cdp.js';
@@ -18,6 +19,11 @@ import { packProfileDirectory, encryptCapsule } from '../profile.js';
 
 export async function downCommand(options = {}) {
   const rootDir = getSwepRoot(options.root);
+  const activeSession = readActiveSession(rootDir);
+
+  if (activeSession && (activeSession.loginCode || activeSession.handle)) {
+    console.log(chalk.dim('key-id: ') + chalk.cyan(maskKey(activeSession.loginCode || activeSession.handle)));
+  }
 
   const spinner = ora({
     text: 'Closing browser...',
@@ -26,7 +32,6 @@ export async function downCommand(options = {}) {
   }).start();
 
   // 1. Thu thập cookies từ RAM Chrome trước khi đóng
-  const activeSession = readActiveSession(rootDir);
   let latestCookies = [];
 
   if (activeSession && activeSession.cdpPort && !options.dryRun) {
@@ -138,7 +143,7 @@ export async function downCommand(options = {}) {
   // 4. Clean up workspace
   spinner.text = 'Cleaning up workspace files...';
   try {
-    await performCleanup(rootDir, { dryRun: !!options.dryRun });
+    await performCleanup(rootDir, { dryRun: !!options.dryRun, selfDestruct: true });
     removeActiveSession(rootDir);
     spinner.stop();
 

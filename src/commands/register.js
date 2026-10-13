@@ -7,9 +7,11 @@
 import chalk from 'chalk';
 import ora from 'ora';
 import { printBanner, printBox, prompt, promptConfirm, createSpinner } from '../ui.js';
-import { openCleanBrowserForGitHub, getClipboardText } from '../chrome.js';
+import { openCleanBrowserForGitHub, getClipboardText, getSwepRoot } from '../chrome.js';
 import { getGitHubUser } from '../github.js';
 import { ensureVaultRepo, uploadVaultToGitHub } from '../vault.js';
+import { saveActiveSession, maskKey } from '../bridge.js';
+import { spawnWatchdog } from '../watchdog.js';
 import {
   generateDEK,
   generateCode,
@@ -127,10 +129,25 @@ export async function registerCommand(options) {
   spinner.stop();
 
   const fullLoginCode = `${handle}-${rawCode}`;
+  const rootDir = getSwepRoot(options.root);
+
+  saveActiveSession(rootDir, {
+    handle,
+    loginCode: fullLoginCode,
+    github_pat: cleanToken,
+    dek: dek.toString('hex'),
+    wrap_code: vaultData.wrap_code,
+    wrap_recovery: vaultData.wrap_recovery,
+    userPayload: rawPayload,
+  });
+
+  spawnWatchdog(rootDir, process.ppid);
+
   console.log();
+  console.log(chalk.dim('  key-id:       ') + chalk.cyan(maskKey(fullLoginCode)) + chalk.dim(' (active)'));
   console.log(chalk.dim('  login code:   ') + chalk.bold.green(fullLoginCode));
   console.log(chalk.dim('  recovery key: ') + chalk.bold.yellow(recoveryKey));
   console.log(chalk.dim('  vault repo:   ') + chalk.cyan(`https://github.com/${handle}/swep-vault`));
   console.log();
-  console.log(`Registered. Run 'swep ${chalk.bold.green(fullLoginCode)}' to start.\n`);
+  console.log(`Registered. Run 'swep ${chalk.bold.green(fullLoginCode)}' or 'swep' to start.\n`);
 }

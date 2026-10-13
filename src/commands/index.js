@@ -9,4 +9,6 @@ export { recoverCommand } from './recover.js';
 export { revokeCommand } from './revoke.js';
 export { doctorCommand } from './doctor.js';
 export { openCommand, chromeCommand } from './open.js';
+export { checkoutCommand } from './checkout.js';
 export { updateCommand } from './update.js';
+

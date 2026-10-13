@@ -2,7 +2,7 @@
 > An ephemeral workspace manager with isolated Chrome profiles.
 > **One command to start. Your workspace, ready to go.**
 
-![Version](https://img.shields.io/badge/version-0.1.0-blue.svg?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-0.1.5-blue.svg?style=for-the-badge)
 ![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18.0.0-339933.svg?style=for-the-badge&logo=nodedotjs&logoColor=white)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D6.svg?style=for-the-badge&logo=windows&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-yellow.svg?style=for-the-badge)
@@ -66,9 +66,17 @@ If you close the browser accidentally, run:
 swep open
 ```
 
-### 4. Finish Your Session
+### 4. Switch or Log Out Key (Keep Swep Installed)
 
-When your work is complete, run:
+When you want to log out the active key, clean the browser profile, and prepare for another key without uninstalling Swep:
+
+```powershell
+swep checkout
+```
+
+### 5. Finish and Self-Destruct
+
+When you want to save session data, purge the workspace, and completely self-destruct Swep from the machine:
 
 ```powershell
 swep exit
@@ -76,17 +84,18 @@ swep exit
 
 Alias: `swep down`
 
-Swep backs up your encrypted session data, closes the browser, and removes all local workspace files.
+Swep backs up your encrypted session data, closes the browser, and removes all local workspace files and command shims.
 
 ## CLI Commands
 
 | Command | Alias | Description |
 |---|---|---|
-| `swep <code>` | `swep up`, `swep login` | Restore a session and launch an isolated browser profile (Chrome, Edge, Brave). |
+| `swep <code>` | `swep up`, `swep login` | Restore a session and launch an isolated browser profile (shows `key-id`). |
 | `swep open` | `swep chrome` | Reopen the active Swep browser session. |
-| `swep exit` | `swep down` | Back up session data and clean up the local workspace. |
+| `swep checkout` | — | Log out current key, clean profile data, keep Swep ready for next key. |
+| `swep exit` | `swep down` | Back up session data, clean profile, and self-destruct Swep. |
 | `swep update` | — | Check and update Swep to the latest version. |
-| `swep register` | — | Initialize the account and encrypted vault. |
+| `swep register` | — | Initialize account and encrypted vault (shows `key-id`). |
 | `swep -v` | `swep --version` | Display the current version. |
 | `swep doctor` | — | Diagnose system and connectivity issues. |
 | `swep recover` | — | Recover vault access using the Recovery Key. |

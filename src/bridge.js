@@ -197,3 +197,44 @@ export function removeActiveSession(rootDir) {
     // ignore
   }
 }
+
+/**
+ * Mask key for secure display: handle-ABxx-xxxC
+ * @param {string} key
+ * @returns {string}
+ */
+export function maskKey(key) {
+  if (!key || typeof key !== 'string') return '';
+  const parts = key.trim().split('-');
+  if (parts.length < 2) {
+    const s = parts[0];
+    if (s.length <= 4) return s;
+    return `${s.slice(0, 2)}xx-xxx${s.slice(-1)}`;
+  }
+  const handle = parts[0];
+  const secret = parts.slice(1).join('-');
+  if (secret.length <= 4) {
+    return `${handle}-****`;
+  }
+  const head = secret.slice(0, 2);
+  const tail = secret.slice(-1);
+  return `${handle}-${head}xx-xxx${tail}`;
+}
+
+/**
+ * Lấy thông tin key đang active
+ * @param {string} rootDir
+ * @returns {{ rawKey: string, maskedKey: string, session: object } | null}
+ */
+export function getActiveKey(rootDir) {
+  const session = readActiveSession(rootDir);
+  if (!session) return null;
+  const rawKey = session.loginCode || session.handle || '';
+  if (!rawKey) return null;
+  return {
+    rawKey,
+    maskedKey: maskKey(rawKey),
+    session,
+  };
+}
+

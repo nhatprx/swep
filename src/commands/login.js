@@ -16,9 +16,14 @@ import {
   openSwepBrowser,
   getSwepRoot,
 } from '../chrome.js';
+import chalk from 'chalk';
 import {
   saveActiveSession,
+  readActiveSession,
+  maskKey,
 } from '../bridge.js';
+import { spawnWatchdog } from '../watchdog.js';
+import { checkoutCommand } from './checkout.js';
 import {
   getFreePort,
   injectCookiesViaCDP,
@@ -44,25 +49,42 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
     console.log('[dry-run] Simulating workspace launch...');
   }
 
-  // If no code provided and active profile exists: reopen browser
+  const activeSession = readActiveSession(rootDir);
   const existingProfileDir = path.join(rootDir, 'chrome-profile');
-  if (!passedCode && fs.existsSync(existingProfileDir)) {
-    const opened = await openSwepBrowser(rootDir, 'https://www.google.com');
-    if (opened) {
-      console.log("Workspace reopened. Run 'swep exit' when done.");
+
+  // If no code provided
+  if (!passedCode) {
+    if (activeSession && (activeSession.loginCode || activeSession.handle)) {
+      const masked = maskKey(activeSession.loginCode || activeSession.handle);
+      console.log(chalk.dim('key-id: ') + chalk.cyan(masked) + chalk.dim(' (active)'));
+      console.log("Workspace active. Run 'swep open' to view browser, 'swep checkout' to switch key, or 'swep exit' to clean and exit.\n");
       return;
     }
-  }
 
-  // Require login code
-  let inputCode = passedCode;
-  if (!inputCode) {
+    if (fs.existsSync(existingProfileDir)) {
+      const opened = await openSwepBrowser(rootDir, 'https://www.google.com');
+      if (opened) {
+        console.log("Workspace reopened. Run 'swep checkout' or 'swep exit' when done.");
+        return;
+      }
+    }
+
     console.error("usage: swep <code>");
     console.error("error: login code is required");
+    console.error("Run 'swep register' to create a new workspace vault.\n");
     return;
   }
 
-  const parts = inputCode.trim().split('-');
+  // Require login code
+  let inputCode = passedCode.trim();
+
+  // If switching to a different key, check out the existing one first
+  if (activeSession && activeSession.loginCode && activeSession.loginCode !== inputCode) {
+    console.log(chalk.dim('Switching keys. Checking out current key: ') + chalk.cyan(maskKey(activeSession.loginCode)) + chalk.dim('...'));
+    await checkoutCommand({ root: options.root });
+  }
+
+  const parts = inputCode.split('-');
   if (parts.length < 2) {
     console.error('error: invalid code format (expected: <username>-<code>)');
     return;
@@ -176,6 +198,7 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
 
   saveActiveSession(rootDir, {
     handle,
+    loginCode: inputCode,
     google_email: userPayload.google_email || handle,
     google_password: userPayload.google_password || '',
     github_pat: userPayload.github_pat,
@@ -185,6 +208,8 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
     cdpPort,
     userPayload,
   });
+
+  spawnWatchdog(rootDir, process.ppid);
 
   // 5. Launch Browser
   spinner.text = 'Launching browser...';
@@ -204,5 +229,6 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
 
   spinner.stop();
   const account = userPayload.google_email || handle;
-  console.log(`Workspace ready for ${account}. Run 'swep exit' when done.`);
+  console.log(chalk.dim('key-id: ') + chalk.cyan(maskKey(inputCode)) + chalk.dim(' (active)'));
+  console.log(`Workspace ready for ${account}. Run 'swep checkout' or 'swep exit' when done.`);
 }
