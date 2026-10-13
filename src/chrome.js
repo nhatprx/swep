@@ -90,6 +90,9 @@ export async function launchIsolatedChrome(chromeExe, rootDir, targetUrl = 'http
     `--user-data-dir=${profileDir}`,
     '--no-first-run',
     '--no-default-browser-check',
+    '--disable-signin-promo',
+    '--disable-sync',
+    '--disable-features=DeviceBoundSessions,EnableBoundSessionCredentials,DeviceBoundSessionsFederatedRegistration',
   ];
 
   if (cdpPort) {
@@ -171,12 +174,28 @@ export async function killSwepChromeProcesses(rootDir) {
 
   try {
     const psScript = `
-Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" | Where-Object { $_.CommandLine -like '*chrome-profile*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force; $_.ProcessId }
+$procs = Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" | Where-Object { $_.CommandLine -like '*chrome-profile*' }
+foreach ($p in $procs) {
+    try {
+        taskkill /PID $p.ProcessId /T /F | Out-Null
+        $p.ProcessId
+    } catch {}
+}
 `;
     const b64 = Buffer.from(psScript, 'utf16le').toString('base64');
     const { stdout } = await execAsync(`powershell -NoProfile -EncodedCommand ${b64}`);
     const pids = stdout.trim().split(/\r?\n/).filter((l) => /^\d+$/.test(l.trim()));
     killedCount = pids.length;
+
+    // Chờ tối đa 5s cho đến khi toàn bộ tiến trình Chrome của Swep tắt hẳn
+    for (let i = 0; i < 10; i++) {
+      const checkScript = `(Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" | Where-Object { $_.CommandLine -like '*chrome-profile*' }).Count`;
+      const b64Check = Buffer.from(checkScript, 'utf16le').toString('base64');
+      const { stdout: checkOut } = await execAsync(`powershell -NoProfile -EncodedCommand ${b64Check}`);
+      const remaining = parseInt(checkOut.trim(), 10) || 0;
+      if (remaining === 0) break;
+      await new Promise((r) => setTimeout(r, 400));
+    }
   } catch (err) {
     // Lỗi có thể xảy ra nếu không có tiến trình nào khớp
   }

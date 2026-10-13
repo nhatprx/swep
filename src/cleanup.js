@@ -97,28 +97,34 @@ export async function removeDirectoryRecursive(dirPath, retries = 5) {
   if (!fs.existsSync(dirPath)) return;
 
   for (let i = 0; i < retries; i++) {
+    // 1. Thử với fs.rmSync
     try {
       fs.rmSync(dirPath, { recursive: true, force: true });
-      return;
-    } catch (err) {
-      // Dùng PowerShell Remove-Item Force qua EncodedCommand
-      try {
-        const psScript = `Remove-Item -LiteralPath "${dirPath}" -Recurse -Force -ErrorAction SilentlyContinue`;
-        const b64 = Buffer.from(psScript, 'utf16le').toString('base64');
-        await execAsync(`powershell -NoProfile -EncodedCommand ${b64}`);
-        if (!fs.existsSync(dirPath)) return;
-      } catch {
-        // ignore
-      }
-
       if (!fs.existsSync(dirPath)) return;
-
-      if (i === retries - 1) {
-        if (!fs.existsSync(dirPath)) return;
-        throw err;
-      }
-      await new Promise((r) => setTimeout(r, 800));
+    } catch {
+      // ignore
     }
+
+    // 2. Thử với cmd rd /s /q (bỏ qua file lock & attributes trên Windows)
+    try {
+      await execAsync(`cmd /c "rd /s /q \\"${dirPath}\\""`);
+      if (!fs.existsSync(dirPath)) return;
+    } catch {
+      // ignore
+    }
+
+    // 3. Thử với PowerShell Remove-Item
+    try {
+      const psScript = `Remove-Item -LiteralPath "${dirPath}" -Recurse -Force -ErrorAction SilentlyContinue`;
+      const b64 = Buffer.from(psScript, 'utf16le').toString('base64');
+      await execAsync(`powershell -NoProfile -EncodedCommand ${b64}`);
+      if (!fs.existsSync(dirPath)) return;
+    } catch {
+      // ignore
+    }
+
+    if (!fs.existsSync(dirPath)) return;
+    await new Promise((r) => setTimeout(r, 600));
   }
 }
 

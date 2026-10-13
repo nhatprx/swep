@@ -61,10 +61,30 @@ export async function downCommand(options = {}) {
       }
 
       if (latestCookies.length > 0) {
+        // Kiểm tra xem latestCookies có chứa cookies xác thực quan trọng không
+        const existingCookies = (activeSession.userPayload?.session?.cookies) || [];
+        const hasAuthCookies = (list) => Array.isArray(list) && list.some((c) =>
+          (c.name === 'SID' || c.name === 'HSID' || c.name === 'SSID' || c.name === '__Secure-1PSID') &&
+          (c.domain && c.domain.includes('google'))
+        );
+
+        let finalCookies = latestCookies;
+        // Nếu phiên hiện tại bị thiếu auth cookies nhưng phiên trước đó đã có, merge giữ lại auth cookies cũ
+        if (!hasAuthCookies(latestCookies) && hasAuthCookies(existingCookies)) {
+          const latestMap = new Map(latestCookies.map((c) => [`${c.name}@${c.domain}`, c]));
+          for (const old of existingCookies) {
+            const key = `${old.name}@${old.domain}`;
+            if (!latestMap.has(key)) {
+              latestMap.set(key, old);
+            }
+          }
+          finalCookies = Array.from(latestMap.values());
+        }
+
         // Cập nhật payload với session mới nhất
         const userPayload = activeSession.userPayload || {};
         userPayload.session = {
-          cookies: latestCookies,
+          cookies: finalCookies,
           updated_at: new Date().toISOString(),
         };
 
@@ -81,7 +101,7 @@ export async function downCommand(options = {}) {
         };
 
         await uploadVaultToGitHub(activeSession.github_pat, activeSession.handle, vaultData);
-        spinSync.succeed(`Đã lưu trữ và đồng bộ Session Capsule (${chalkCol.bold(latestCookies.length)} cookies) lên GitHub!`);
+        spinSync.succeed(`Đã lưu trữ và đồng bộ Session Capsule (${chalkCol.bold(finalCookies.length)} cookies) lên GitHub!`);
       } else {
         spinSync.info(chalkCol.dim('Chưa phát hiện cookies phiên mới nào cần cập nhật.'));
       }

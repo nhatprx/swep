@@ -38,6 +38,7 @@ import {
   getFreePort,
   injectCookiesViaCDP,
   getCookiesViaCDP,
+  navigatePageViaCDP,
 } from '../cdp.js';
 import {
   takeBeforeSnapshot,
@@ -167,19 +168,24 @@ export async function loginCommand(options = {}) {
 
   // 6. Mở Chrome với Profile cô lập + CDP Port
   console.log(chalk.green('\n✔ Đang mở Chrome với profile tạm thời của Swep...'));
-  await launchIsolatedChrome(chromeExe, rootDir, targetUrl, cdpPort);
 
   if (initialCookies.length > 0) {
-    // ĐÃ CÓ PHIÊN: Bơm trực tiếp vào RAM Chrome qua CDP
+    // ĐÃ CÓ PHIÊN:
+    // Khởi chạy Chrome với about:blank trước để tránh việc Chrome gọi request rỗng (race condition)
+    await launchIsolatedChrome(chromeExe, rootDir, 'about:blank', cdpPort);
+
     const spinCapsule = createSpinner(`Đang bung Session Capsule (${initialCookies.length} cookies) vào Chrome qua CDP...`);
     try {
       await injectCookiesViaCDP(cdpPort, initialCookies);
+      await navigatePageViaCDP(cdpPort, targetUrl);
       spinCapsule.succeed(chalk.bold.green(`✔ Chrome đã tự bung phiên đăng nhập thành công! (Không cần đăng nhập lại)`));
     } catch (err) {
       spinCapsule.warn(chalk.yellow(`Không thể bung cookies qua CDP: ${err.message}`));
+      await openSwepChrome(rootDir, targetUrl, cdpPort);
     }
   } else {
-    // LẦN ĐẦU TIÊN: Hướng dẫn người dùng đăng nhập
+    // LẦN ĐẦU TIÊN: Mở trực tiếp trang đăng nhập Google
+    await launchIsolatedChrome(chromeExe, rootDir, targetUrl, cdpPort);
     console.log(chalk.bold.yellow('\n📝 LẦN ĐẦU SỬ DỤNG:'));
     console.log(chalk.white('   Hãy đăng nhập tài khoản Google trên cửa sổ Chrome vừa mở.'));
     console.log(chalk.dim('   (Khi bạn xong việc và gõ "swep down", Swep sẽ tự lưu phiên này để từ lần sau KHÔNG CẦN ĐĂNG NHẬP LẠI NỮA!)\n'));

@@ -74,29 +74,36 @@ export async function injectCookiesViaCDP(port, cookies) {
   if (!cookies || !cookies.length) return true;
 
   const wsUrl = await getCDPWebSocketUrl(port);
+  const now = Math.floor(Date.now() / 1000);
 
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-      const cdpCookies = cookies.map((c) => {
-        const item = {
-          name: c.name,
-          value: c.value,
-          domain: c.domain,
-          path: c.path || '/',
-          secure: Boolean(c.secure),
-          httpOnly: Boolean(c.httpOnly),
-        };
-        if (c.sameSite && c.sameSite !== 'unspecified') {
-          item.sameSite = c.sameSite;
-        }
-        const exp = c.expires || c.expirationDate;
-        if (exp && exp > Math.floor(Date.now() / 1000)) {
-          item.expires = exp;
-        }
-        return item;
-      });
+      const cdpCookies = cookies
+        .filter((c) => {
+          const exp = c.expires || c.expirationDate;
+          if (exp && exp !== -1 && exp < now) return false;
+          return true;
+        })
+        .map((c) => {
+          const item = {
+            name: c.name,
+            value: c.value,
+            domain: c.domain,
+            path: c.path || '/',
+            secure: Boolean(c.secure),
+            httpOnly: Boolean(c.httpOnly),
+          };
+          if (c.sameSite && c.sameSite !== 'unspecified') {
+            item.sameSite = c.sameSite;
+          }
+          const exp = c.expires || c.expirationDate;
+          if (exp && exp > now) {
+            item.expires = exp;
+          }
+          return item;
+        });
 
       ws.send(JSON.stringify({
         id: 1,
@@ -110,7 +117,11 @@ export async function injectCookiesViaCDP(port, cookies) {
         const msg = JSON.parse(event.data);
         if (msg.id === 1) {
           ws.close();
-          resolve(true);
+          if (msg.error) {
+            reject(new Error(msg.error.message || 'Lỗi nạp cookies qua CDP.'));
+          } else {
+            resolve(true);
+          }
         }
       } catch (err) {
         ws.close();
@@ -121,6 +132,45 @@ export async function injectCookiesViaCDP(port, cookies) {
     ws.onerror = (err) => {
       reject(err);
     };
+  });
+}
+
+/**
+ * Điều hướng tab hiện tại của Chrome tới targetUrl qua CDP Page.navigate
+ * @param {number} port
+ * @param {string} targetUrl
+ * @returns {Promise<object>}
+ */
+export async function navigatePageViaCDP(port, targetUrl) {
+  const targetsRes = await fetch(`http://127.0.0.1:${port}/json/list`);
+  const targets = await targetsRes.json();
+  const pageTarget = targets.find((t) => t.type === 'page') || targets[0];
+  if (!pageTarget || !pageTarget.webSocketDebuggerUrl) {
+    throw new Error('Không tìm thấy tab trang nào trong Chrome CDP.');
+  }
+
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(pageTarget.webSocketDebuggerUrl);
+    ws.onopen = () => {
+      ws.send(JSON.stringify({
+        id: 100,
+        method: 'Page.navigate',
+        params: { url: targetUrl },
+      }));
+    };
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.id === 100) {
+          ws.close();
+          resolve(msg.result);
+        }
+      } catch (err) {
+        ws.close();
+        reject(err);
+      }
+    };
+    ws.onerror = (err) => reject(err);
   });
 }
 
