@@ -19,10 +19,10 @@ import { packProfileDirectory, encryptCapsule } from '../profile.js';
 
 export async function downCommand(options = {}) {
   const rootDir = getSwepRoot(options.root);
-  const active = getActiveKey(rootDir);
+  const activeSession = readActiveSession(rootDir);
 
-  if (active) {
-    console.log(chalk.dim('key-id: ') + chalk.cyan(active.maskedKey));
+  if (activeSession && (activeSession.loginCode || activeSession.handle)) {
+    console.log(chalk.dim('key-id: ') + chalk.cyan(maskKey(activeSession.loginCode || activeSession.handle)));
   }
 
   const spinner = ora({
@@ -145,7 +145,9 @@ export async function downCommand(options = {}) {
   spinner.text = 'Cleaning up workspace files...';
   try {
     await performCleanup(rootDir, { dryRun: !!options.dryRun, selfDestruct: true });
-    removeActiveSession(rootDir);
+    if (!options.dryRun) {
+      removeActiveSession(rootDir);
+    }
     spinner.stop();
 
     if (options.dryRun) {

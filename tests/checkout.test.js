@@ -82,3 +82,21 @@ test('checkoutCommand: runs dryRun cleanly', async () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('downCommand: runs dryRun cleanly without ReferenceError', async () => {
+  const { downCommand } = await import('../src/commands/down.js');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swep-test-down-'));
+  try {
+    saveActiveSession(tmpDir, {
+      handle: 'nhatprx',
+      loginCode: 'nhatprx-AB1234567C',
+      cdpPort: 12345,
+    });
+    // Should run dryRun without throwing
+    await downCommand({ root: tmpDir, dryRun: true });
+    assert.ok(readActiveSession(tmpDir));
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
