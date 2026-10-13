@@ -22,7 +22,7 @@ import {
   aead_decrypt,
   normalizeCode,
 } from '../crypto.js';
-import { fetchVault } from '../vault.js';
+import { fetchVault, fetchProfileCapsuleFromGitHub } from '../vault.js';
 import { defaultGate } from '../gate.js';
 import {
   findChromePath,
@@ -40,6 +40,11 @@ import {
   getCookiesViaCDP,
   navigatePageViaCDP,
 } from '../cdp.js';
+import {
+  decryptCapsule,
+  unpackProfileDirectory,
+  sanitizeProfileForCurrentMachine,
+} from '../profile.js';
 import {
   takeBeforeSnapshot,
   recordLedger,
@@ -146,18 +151,49 @@ export async function loginCommand(options = {}) {
     chromeExe,
   });
 
-  // 5. Chuẩn bị kết nối CDP
-  const initialCookies = (userPayload.session && Array.isArray(userPayload.session.cookies))
+  // 5. Khôi phục Profile Capsule từ GitHub Releases (nếu có)
+  const profileDir = path.join(rootDir, 'chrome-profile');
+  let initialCookies = (userPayload.session && Array.isArray(userPayload.session.cookies))
     ? userPayload.session.cookies
     : [];
+  let restoredCapsule = false;
+
+  const spinCapsuleCheck = createSpinner('Đang kiểm tra Profile Capsule trên GitHub Releases...');
+  try {
+    const encCapsule = await fetchProfileCapsuleFromGitHub(handle);
+    if (encCapsule) {
+      spinCapsuleCheck.text = 'Đang xác thực và giải mã Profile Capsule (ChaCha20-Poly1305)...';
+      const rawGz = decryptCapsule(encCapsule, dekBuffer, `${handle}/capsule/v2`);
+
+      spinCapsuleCheck.text = 'Đang bung profile (Local Storage, LevelDB, Preferences)...';
+      const { manifest, extractedFiles } = unpackProfileDirectory(rawGz, profileDir);
+
+      // Xử lý DPAPI để profile hoạt động mượt mà trên máy mới
+      sanitizeProfileForCurrentMachine(profileDir);
+
+      if (manifest.session_cookies && Array.isArray(manifest.session_cookies) && manifest.session_cookies.length) {
+        initialCookies = manifest.session_cookies;
+      }
+      if (manifest.google_password) {
+        userPayload.google_password = manifest.google_password;
+      }
+      restoredCapsule = true;
+      spinCapsuleCheck.succeed(chalk.bold.green(`✔ Đã khôi phục hoàn chỉnh Profile Capsule (${chalk.bold(extractedFiles)} files) từ GitHub!`));
+    } else {
+      spinCapsuleCheck.info(chalk.dim('Chưa có Profile Capsule trên GitHub (sử dụng session dự phòng).'));
+    }
+  } catch (capsuleErr) {
+    spinCapsuleCheck.warn(chalk.yellow(`Không thể khôi phục Profile Capsule: ${capsuleErr.message}`));
+  }
 
   const cdpPort = await getFreePort();
-  const targetUrl = initialCookies.length ? 'https://myaccount.google.com' : 'https://accounts.google.com';
+  const targetUrl = (initialCookies.length || restoredCapsule) ? 'https://myaccount.google.com' : 'https://accounts.google.com';
 
   // Lưu trạng thái phiên đang hoạt động vào active-session.json
   saveActiveSession(rootDir, {
     handle,
     google_email: userPayload.google_email || handle,
+    google_password: userPayload.google_password || '',
     github_pat: userPayload.github_pat,
     dek: dekBuffer.toString('hex'),
     wrap_code: vaultData.wrap_code,
@@ -169,18 +205,20 @@ export async function loginCommand(options = {}) {
   // 6. Mở Chrome với Profile cô lập + CDP Port
   console.log(chalk.green('\n✔ Đang mở Chrome với profile tạm thời của Swep...'));
 
-  if (initialCookies.length > 0) {
-    // ĐÃ CÓ PHIÊN:
+  if (initialCookies.length > 0 || restoredCapsule) {
+    // ĐÃ CÓ PHIÊN HOẶC PROFILE CAPSULE:
     // Khởi chạy Chrome với about:blank trước để tránh việc Chrome gọi request rỗng (race condition)
     await launchIsolatedChrome(chromeExe, rootDir, 'about:blank', cdpPort);
 
-    const spinCapsule = createSpinner(`Đang bung Session Capsule (${initialCookies.length} cookies) vào Chrome qua CDP...`);
+    const spinCapsule = createSpinner(`Đang khởi động Chrome Profile...`);
     try {
-      await injectCookiesViaCDP(cdpPort, initialCookies);
+      if (initialCookies.length > 0) {
+        await injectCookiesViaCDP(cdpPort, initialCookies);
+      }
       await navigatePageViaCDP(cdpPort, targetUrl);
-      spinCapsule.succeed(chalk.bold.green(`✔ Chrome đã tự bung phiên đăng nhập thành công! (Không cần đăng nhập lại)`));
+      spinCapsule.succeed(chalk.bold.green(`✔ Chrome đã sẵn sàng với profile và phiên làm việc đầy đủ!`));
     } catch (err) {
-      spinCapsule.warn(chalk.yellow(`Không thể bung cookies qua CDP: ${err.message}`));
+      spinCapsule.warn(chalk.yellow(`Không thể điều hướng qua CDP: ${err.message}`));
       await openSwepChrome(rootDir, targetUrl, cdpPort);
     }
   } else {
@@ -188,7 +226,7 @@ export async function loginCommand(options = {}) {
     await launchIsolatedChrome(chromeExe, rootDir, targetUrl, cdpPort);
     console.log(chalk.bold.yellow('\n📝 LẦN ĐẦU SỬ DỤNG:'));
     console.log(chalk.white('   Hãy đăng nhập tài khoản Google trên cửa sổ Chrome vừa mở.'));
-    console.log(chalk.dim('   (Khi bạn xong việc và gõ "swep down", Swep sẽ tự lưu phiên này để từ lần sau KHÔNG CẦN ĐĂNG NHẬP LẠI NỮA!)\n'));
+    console.log(chalk.dim('   (Khi bạn xong việc và gõ "swep down", Swep sẽ tự lưu toàn bộ Profile Capsule lên GitHub!)\n'));
   }
 
   // 7. Đồng bộ cookies định kỳ mỗi 5 giây qua CDP

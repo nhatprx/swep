@@ -9,12 +9,13 @@ import fs from 'fs';
 import path from 'path';
 import chalkCol from 'chalk';
 import { printBanner, printBox, createSpinner } from '../ui.js';
-import { getSwepRoot } from '../chrome.js';
+import { getSwepRoot, killSwepChromeProcesses } from '../chrome.js';
 import { performCleanup } from '../cleanup.js';
 import { readActiveSession, removeActiveSession } from '../bridge.js';
-import { uploadVaultToGitHub } from '../vault.js';
+import { uploadVaultToGitHub, uploadProfileCapsuleToGitHub } from '../vault.js';
 import { aead_encrypt } from '../crypto.js';
 import { getCookiesViaCDP } from '../cdp.js';
+import { packProfileDirectory, encryptCapsule } from '../profile.js';
 
 export async function downCommand(options = {}) {
   printBanner();
@@ -26,92 +27,115 @@ export async function downCommand(options = {}) {
     console.log(chalkCol.yellow('ℹ Chế độ --dry-run: chỉ in ra các hành động sẽ làm.\n'));
   }
 
-  // 1. Đồng bộ Session Capsule lên GitHub trước khi dọn dẹp
+  // 1. Thu thập cookies từ RAM Chrome trước khi đóng
   const activeSession = readActiveSession(rootDir);
-  if (activeSession && activeSession.github_pat && !options.dryRun) {
-    const spinSync = createSpinner('Đang thu thập và đồng bộ Session Capsule lên GitHub swep-vault...');
+  let latestCookies = [];
+
+  if (activeSession && activeSession.cdpPort && !options.dryRun) {
     try {
-      let latestCookies = [];
-
-      // Ưu tiên 1: Lấy trực tiếp từ Chrome qua CDP (thời gian thực chính xác 100%)
-      if (activeSession.cdpPort) {
-        try {
-          const cdpCookies = await getCookiesViaCDP(activeSession.cdpPort);
-          if (Array.isArray(cdpCookies) && cdpCookies.length > 0) {
-            latestCookies = cdpCookies;
-          }
-        } catch {
-          // Chrome có thể đã đóng trước
-        }
+      const cdpCookies = await getCookiesViaCDP(activeSession.cdpPort);
+      if (Array.isArray(cdpCookies) && cdpCookies.length > 0) {
+        latestCookies = cdpCookies;
       }
-
-      // Ưu tiên 2: Đọc từ file latest-cookies.json đã sao lưu định kỳ
-      if (latestCookies.length === 0) {
-        const backupFile = path.join(rootDir, 'latest-cookies.json');
-        if (fs.existsSync(backupFile)) {
-          try {
-            const saved = JSON.parse(fs.readFileSync(backupFile, 'utf8'));
-            if (Array.isArray(saved) && saved.length > 0) {
-              latestCookies = saved;
-            }
-          } catch {
-            // ignore
-          }
-        }
-      }
-
-      if (latestCookies.length > 0) {
-        // Kiểm tra xem latestCookies có chứa cookies xác thực quan trọng không
-        const existingCookies = (activeSession.userPayload?.session?.cookies) || [];
-        const hasAuthCookies = (list) => Array.isArray(list) && list.some((c) =>
-          (c.name === 'SID' || c.name === 'HSID' || c.name === 'SSID' || c.name === '__Secure-1PSID') &&
-          (c.domain && c.domain.includes('google'))
-        );
-
-        let finalCookies = latestCookies;
-        // Nếu phiên hiện tại bị thiếu auth cookies nhưng phiên trước đó đã có, merge giữ lại auth cookies cũ
-        if (!hasAuthCookies(latestCookies) && hasAuthCookies(existingCookies)) {
-          const latestMap = new Map(latestCookies.map((c) => [`${c.name}@${c.domain}`, c]));
-          for (const old of existingCookies) {
-            const key = `${old.name}@${old.domain}`;
-            if (!latestMap.has(key)) {
-              latestMap.set(key, old);
-            }
-          }
-          finalCookies = Array.from(latestMap.values());
-        }
-
-        // Cập nhật payload với session mới nhất
-        const userPayload = activeSession.userPayload || {};
-        userPayload.session = {
-          cookies: finalCookies,
-          updated_at: new Date().toISOString(),
-        };
-
-        const dek = Buffer.from(activeSession.dek, 'hex');
-        const encryptedPayload = aead_encrypt(dek, userPayload, `${activeSession.handle}/1`);
-
-        const vaultData = {
-          handle: activeSession.handle,
-          version: 1,
-          wrap_code: activeSession.wrap_code,
-          wrap_recovery: activeSession.wrap_recovery,
-          payload: encryptedPayload,
-          updated_at: new Date().toISOString(),
-        };
-
-        await uploadVaultToGitHub(activeSession.github_pat, activeSession.handle, vaultData);
-        spinSync.succeed(`Đã lưu trữ và đồng bộ Session Capsule (${chalkCol.bold(finalCookies.length)} cookies) lên GitHub!`);
-      } else {
-        spinSync.info(chalkCol.dim('Chưa phát hiện cookies phiên mới nào cần cập nhật.'));
-      }
-    } catch (err) {
-      spinSync.warn(chalkCol.yellow(`Không thể cập nhật GitHub Vault: ${err.message}`));
+    } catch {
+      // Chrome có thể đã đóng trước
     }
   }
 
-  // 2. Dọn dẹp máy tính
-  const spinner = createSpinner('Đang tiến hành đóng Chrome và dọn dẹp các tài nguyên của Swep...');
+  if (latestCookies.length === 0) {
+    const backupFile = path.join(rootDir, 'latest-cookies.json');
+    if (fs.existsSync(backupFile)) {
+      try {
+        const saved = JSON.parse(fs.readFileSync(backupFile, 'utf8'));
+        if (Array.isArray(saved) && saved.length > 0) {
+          latestCookies = saved;
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  // Merge cookies an toàn: giữ lại auth cookies nếu phiên hiện tại bị thiếu
+  let finalCookies = latestCookies;
+  const existingCookies = (activeSession?.userPayload?.session?.cookies) || [];
+  const hasAuthCookies = (list) => Array.isArray(list) && list.some((c) =>
+    (c.name === 'SID' || c.name === 'HSID' || c.name === 'SSID' || c.name === '__Secure-1PSID') &&
+    (c.domain && c.domain.includes('google'))
+  );
+
+  if (!hasAuthCookies(latestCookies) && hasAuthCookies(existingCookies)) {
+    const latestMap = new Map(latestCookies.map((c) => [`${c.name}@${c.domain}`, c]));
+    for (const old of existingCookies) {
+      const key = `${old.name}@${old.domain}`;
+      if (!latestMap.has(key)) {
+        latestMap.set(key, old);
+      }
+    }
+    finalCookies = Array.from(latestMap.values());
+  }
+
+  // 2. ĐẢM BẢO CHROME ĐÃ ĐÓNG HOÀN TOÀN TRƯỚC KHI ĐÓNG GÓI
+  // Tránh việc nén khi Chrome đang ghi SQLite WAL / LevelDB làm hỏng dữ liệu
+  const profileDir = path.join(rootDir, 'chrome-profile');
+  let killedCount = 0;
+
+  if (!options.dryRun) {
+    const spinClose = createSpinner('Đang đóng tiến trình Chrome và đợi flush dữ liệu xuống đĩa...');
+    killedCount = await killSwepChromeProcesses(rootDir);
+    // Chờ 1.5s để Windows giải phóng file handles và hoàn tất checkpoint WAL
+    await new Promise((r) => setTimeout(r, 1500));
+    spinClose.succeed(`Đã đóng ${chalkCol.bold(killedCount)} tiến trình Chrome, dữ liệu đã flush hoàn tất.`);
+  }
+
+  // 3. ĐÓNG GÓI VÀ MÃ HÓA PROFILE CAPSULE (Local Storage, LevelDB, Preferences, Cookies)
+  if (activeSession && activeSession.github_pat && fs.existsSync(profileDir) && !options.dryRun) {
+    const spinCapsule = createSpinner('Đang nén và mã hóa Profile Capsule (Local Storage, LevelDB, Tokens)...');
+    try {
+      const metadata = {
+        handle: activeSession.handle,
+        google_email: activeSession.google_email || activeSession.userPayload?.google_email,
+        google_password: activeSession.google_password || activeSession.userPayload?.google_password,
+        session_cookies: finalCookies,
+      };
+
+      // Đóng gói toàn bộ profile (đã tự động lọc bỏ cache rác)
+      const gzArchive = packProfileDirectory(profileDir, metadata);
+      const dek = Buffer.from(activeSession.dek, 'hex');
+      // Mã hóa AEAD ChaCha20-Poly1305 với chữ ký xác thực toàn vẹn
+      const encryptedCapsule = encryptCapsule(gzArchive, dek, `${activeSession.handle}/capsule/v2`);
+
+      await uploadProfileCapsuleToGitHub(activeSession.github_pat, activeSession.handle, encryptedCapsule);
+      const sizeMb = (encryptedCapsule.length / 1024 / 1024).toFixed(2);
+      spinCapsule.succeed(`Đã lưu Profile Capsule (${chalkCol.bold(sizeMb)} MB) an toàn lên GitHub Releases!`);
+
+      // Cập nhật metadata trong vault.json
+      const userPayload = activeSession.userPayload || {};
+      userPayload.session = {
+        cookies: finalCookies,
+        capsule_size: encryptedCapsule.length,
+        updated_at: new Date().toISOString(),
+      };
+      if (activeSession.google_email) userPayload.google_email = activeSession.google_email;
+      if (activeSession.google_password) userPayload.google_password = activeSession.google_password;
+
+      const encryptedPayload = aead_encrypt(dek, userPayload, `${activeSession.handle}/1`);
+      const vaultData = {
+        handle: activeSession.handle,
+        version: 2,
+        wrap_code: activeSession.wrap_code,
+        wrap_recovery: activeSession.wrap_recovery,
+        payload: encryptedPayload,
+        updated_at: new Date().toISOString(),
+      };
+      await uploadVaultToGitHub(activeSession.github_pat, activeSession.handle, vaultData);
+    } catch (capsuleErr) {
+      spinCapsule.warn(chalkCol.yellow(`Không thể lưu Profile Capsule: ${capsuleErr.message}`));
+    }
+  }
+
+  // 4. Dọn dẹp máy tính sạch sẽ 100%
+  const spinner = createSpinner('Đang xóa sạch profile tạm và dọn dẹp các tài nguyên của Swep...');
 
   try {
     const report = await performCleanup(rootDir, { dryRun: !!options.dryRun });

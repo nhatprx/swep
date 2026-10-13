@@ -118,3 +118,99 @@ export async function uploadVaultToGitHub(token, handle, encryptedVault) {
     throw new Error(`Không thể upload vault.json lên GitHub: ${msg}`);
   }
 }
+
+/**
+ * Tải file profile.capsule.enc từ GitHub Release
+ * @param {string} handle - GitHub username
+ * @returns {Promise<Buffer|null>} Dữ liệu capsule đã mã hóa, hoặc null nếu chưa có
+ */
+export async function fetchProfileCapsuleFromGitHub(handle) {
+  const downloadUrl = `https://github.com/${handle}/swep-vault/releases/download/capsule/profile.capsule.enc?t=${Date.now()}`;
+  try {
+    const res = await axios.get(downloadUrl, {
+      responseType: 'arraybuffer',
+      timeout: 30000,
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'User-Agent': 'swep-cli/0.1.0',
+      },
+    });
+    return Buffer.from(res.data);
+  } catch (err) {
+    if (err.response?.status === 404) {
+      return null; // Chưa có capsule
+    }
+    // Thử fallback qua API nếu có
+    return null;
+  }
+}
+
+/**
+ * Đẩy file profile.capsule.enc lên GitHub Release tag "capsule"
+ * @param {string} token - GitHub PAT
+ * @param {string} handle - GitHub username
+ * @param {Buffer} encryptedCapsuleBuffer - Binary capsule đã mã hóa AEAD
+ * @returns {Promise<boolean>}
+ */
+export async function uploadProfileCapsuleToGitHub(token, handle, encryptedCapsuleBuffer) {
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'swep-cli/0.1.0',
+  };
+
+  // 1. Kiểm tra hoặc tạo release "capsule"
+  let release;
+  try {
+    const relRes = await axios.get(`https://api.github.com/repos/${handle}/swep-vault/releases/tags/capsule`, { headers });
+    release = relRes.data;
+  } catch (err) {
+    if (err.response?.status === 404) {
+      const createRes = await axios.post(
+        `https://api.github.com/repos/${handle}/swep-vault/releases`,
+        {
+          tag_name: 'capsule',
+          name: 'Swep Profile Capsule',
+          body: 'Encrypted workplace profile capsule (Argon2id & ChaCha20-Poly1305)',
+        },
+        { headers }
+      );
+      release = createRes.data;
+    } else {
+      throw err;
+    }
+  }
+
+  // 2. Xóa asset cũ nếu đã tồn tại
+  const assetName = 'profile.capsule.enc';
+  if (Array.isArray(release.assets)) {
+    const existing = release.assets.find((a) => a.name === assetName);
+    if (existing) {
+      try {
+        await axios.delete(`https://api.github.com/repos/${handle}/swep-vault/releases/assets/${existing.id}`, { headers });
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  // 3. Upload asset mới
+  const uploadUrl = `https://uploads.github.com/repos/${handle}/swep-vault/releases/${release.id}/assets?name=${encodeURIComponent(assetName)}`;
+  try {
+    await axios.post(uploadUrl, encryptedCapsuleBuffer, {
+      headers: {
+        ...headers,
+        'Content-Type': 'application/octet-stream',
+      },
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+      timeout: 120000,
+    });
+    return true;
+  } catch (err) {
+    const msg = err.response?.data?.message || err.message;
+    throw new Error(`Lỗi upload capsule lên GitHub Releases: ${msg}`);
+  }
+}
+
