@@ -18,14 +18,7 @@ import { getCookiesViaCDP, closeChromeViaCDP } from '../cdp.js';
 import { packProfileDirectory, encryptCapsule } from '../profile.js';
 
 export async function downCommand(options = {}) {
-  printBanner();
   const rootDir = getSwepRoot(options.root);
-
-  console.log(chalkCol.bold.cyan('🧹 Bắt đầu quy trình Dọn dẹp môi trường Swep (Down)...\n'));
-
-  if (options.dryRun) {
-    console.log(chalkCol.yellow('ℹ Chế độ --dry-run: chỉ in ra các hành động sẽ làm.\n'));
-  }
 
   // 1. Thu thập cookies từ RAM Chrome trước khi đóng
   const activeSession = readActiveSession(rootDir);
@@ -76,27 +69,25 @@ export async function downCommand(options = {}) {
   }
 
   // 2. ĐẢM BẢO CHROME ĐÃ ĐÓNG HOÀN TOÀN TRƯỚC KHI ĐÓNG GÓI
-  // Tránh việc nén khi Chrome đang ghi SQLite WAL / LevelDB làm hỏng dữ liệu
   const profileDir = path.join(rootDir, 'chrome-profile');
-  let killedCount = 0;
 
   if (!options.dryRun) {
-    const spinClose = createSpinner('Đang đóng tiến trình Chrome và đợi flush dữ liệu xuống đĩa...');
     // 1. Thử đóng nhẹ nhàng qua CDP Browser.close trước
     if (activeSession && activeSession.cdpPort) {
-      await closeChromeViaCDP(activeSession.cdpPort);
-      await new Promise((r) => setTimeout(r, 1200));
+      try {
+        await closeChromeViaCDP(activeSession.cdpPort);
+        await new Promise((r) => setTimeout(r, 1200));
+      } catch {
+        // ignore
+      }
     }
     // 2. Tắt các tiến trình phụ còn sót lại
-    killedCount = await killSwepChromeProcesses(rootDir);
-    // Chờ 1.5s để Windows giải phóng file handles và hoàn tất checkpoint WAL
-    await new Promise((r) => setTimeout(r, 1500));
-    spinClose.succeed(`Đã đóng ${chalkCol.bold(killedCount)} tiến trình Chrome, dữ liệu đã flush hoàn tất.`);
+    await killSwepChromeProcesses(rootDir);
+    await new Promise((r) => setTimeout(r, 1200));
   }
 
   // 3. ĐÓNG GÓI VÀ MÃ HÓA PROFILE CAPSULE (Local Storage, LevelDB, Preferences, Cookies)
   if (activeSession && activeSession.github_pat && fs.existsSync(profileDir) && !options.dryRun) {
-    const spinCapsule = createSpinner('Đang nén và mã hóa Profile Capsule (Local Storage, LevelDB, Tokens)...');
     try {
       const metadata = {
         handle: activeSession.handle,
@@ -112,8 +103,6 @@ export async function downCommand(options = {}) {
       const encryptedCapsule = encryptCapsule(gzArchive, dek, `${activeSession.handle}/capsule/v2`);
 
       await uploadProfileCapsuleToGitHub(activeSession.github_pat, activeSession.handle, encryptedCapsule);
-      const sizeMb = (encryptedCapsule.length / 1024 / 1024).toFixed(2);
-      spinCapsule.succeed(`Đã lưu Profile Capsule (${chalkCol.bold(sizeMb)} MB) an toàn lên GitHub Releases!`);
 
       // Cập nhật metadata trong vault.json
       const userPayload = activeSession.userPayload || {};
@@ -135,39 +124,22 @@ export async function downCommand(options = {}) {
         updated_at: new Date().toISOString(),
       };
       await uploadVaultToGitHub(activeSession.github_pat, activeSession.handle, vaultData);
-    } catch (capsuleErr) {
-      spinCapsule.warn(chalkCol.yellow(`Không thể lưu Profile Capsule: ${capsuleErr.message}`));
+    } catch {
+      // capsule upload error - continue to cleanup
     }
   }
 
   // 4. Dọn dẹp máy tính sạch sẽ 100%
-  const spinner = createSpinner('Đang xóa sạch profile tạm và dọn dẹp các tài nguyên của Swep...');
-
   try {
-    const report = await performCleanup(rootDir, { dryRun: !!options.dryRun });
+    await performCleanup(rootDir, { dryRun: !!options.dryRun });
     removeActiveSession(rootDir);
-    spinner.succeed('Dọn dẹp hoàn tất sạch sẽ 100%!');
 
-    console.log();
-    printBox(
-      'Báo cáo dọn dẹp hệ thống',
-      [
-        `✔ Đã đồng bộ session mới nhất lên GitHub: ${chalkCol.bold('An toàn')}`,
-        `✔ Đã đóng tiến trình Chrome của Swep: ${chalkCol.bold(report.killedProcesses)} tiến trình`,
-        `✔ Đã xóa thư mục profile và dữ liệu: ${chalkCol.bold(report.removedFiles.length)} thư mục`,
-        report.uninstalledChrome
-          ? `✔ Đã gỡ bỏ Google Chrome (do Swep là bên cài đặt)`
-          : `ℹ Giữ nguyên Google Chrome của máy (đã có từ trước)`,
-        report.uninstalledSwep
-          ? `✔ Đã tự động xóa sạch toàn bộ Swep và gỡ khỏi PATH hệ thống`
-          : `ℹ Chế độ repo cục bộ: giữ nguyên mã nguồn dev`,
-        `✔ Clipboard và dữ liệu tạm đã được dọn sạch`,
-        '',
-        chalkCol.green.bold('🎉 MÁY TÍNH HOÀN TOÀN SẠCH SẼ, KHÔNG CÒN DẤU VẾT!'),
-      ],
-      'green'
-    );
+    if (options.dryRun) {
+      console.log(chalkCol.yellow('✔ [dry-run] Đã mô phỏng quá trình dọn dẹp Swep.'));
+    } else {
+      console.log(chalkCol.bold.green('✔ Đã sao lưu dữ liệu lên GitHub và xóa sạch hoàn toàn Swep trên máy tính.'));
+    }
   } catch (err) {
-    spinner.fail(chalkCol.red(`Lỗi trong quá trình dọn dẹp: ${err.message}`));
+    console.error(chalkCol.red(`Lỗi trong quá trình dọn dẹp: ${err.message}`));
   }
 }

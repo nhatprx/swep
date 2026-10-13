@@ -207,41 +207,73 @@ export async function performCleanup(rootDir, options = {}) {
     }
 
     // 6. Tự hủy toàn bộ Swep nếu chạy từ thư mục cài đặt (%LOCALAPPDATA%\Swep)
-    const isInstalledSwep = fs.existsSync(path.join(rootDir, 'app')) || fs.existsSync(path.join(rootDir, 'bin'));
+    const localAppData = process.env.LOCALAPPDATA || path.join(process.env.USERPROFILE || 'C:\\', 'AppData', 'Local');
+    const defaultSwepDir = path.join(localAppData, 'Swep').toLowerCase();
+    const isInstalledSwep =
+      (path.resolve(rootDir).toLowerCase() === defaultSwepDir) ||
+      fs.existsSync(path.join(rootDir, 'bin', 'swep.cmd')) ||
+      fs.existsSync(path.join(rootDir, 'app'));
+
     if (isInstalledSwep) {
       const binDir = path.join(rootDir, 'bin');
-      const psScript = `
+      const swepCmd = path.join(binDir, 'swep.cmd');
+
+      // 6.1 Gỡ sạch Swep khỏi Registry User PATH đồng bộ (synchronous) ngay lập tức
+      try {
+        const psRemovePath = `
+$regPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+if ($regPath) {
+  $items = ($regPath -split ';') | Where-Object { $_ -and $_ -notlike '*\\Swep*' }
+  [Environment]::SetEnvironmentVariable('Path', ($items -join ';'), 'User')
+}
+`;
+        const b64 = Buffer.from(psRemovePath, 'utf16le').toString('base64');
+        await execAsync(`powershell -NoProfile -NonInteractive -EncodedCommand ${b64}`);
+      } catch {
+        // ignore
+      }
+
+      // 6.2 Xóa ngay file lệnh swep.cmd đồng bộ để mọi lệnh swep sau đó lập tức vô hiệu
+      try {
+        if (fs.existsSync(swepCmd)) {
+          fs.unlinkSync(swepCmd);
+        }
+      } catch {
+        // ignore
+      }
+
+      // 6.3 Tắt các tiến trình node chạy ngầm của Swep (nếu có, trừ chính process hiện tại)
+      try {
+        const killLingering = `
+Get-CimInstance Win32_Process | Where-Object { ($_.CommandLine -like '*\\Swep\\*' -or $_.CommandLine -like '*swep.js*') -and $_.ProcessId -ne ${process.pid} } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+`;
+        const b64Kill = Buffer.from(killLingering, 'utf16le').toString('base64');
+        await execAsync(`powershell -NoProfile -NonInteractive -EncodedCommand ${b64Kill}`);
+      } catch {
+        // ignore
+      }
+
+      // 6.4 Kích hoạt tiến trình PowerShell ngầm độc lập để dọn sạch 100% thư mục %LOCALAPPDATA%\Swep sau khi process.exit()
+      try {
+        const psDestructScript = `
 Start-Sleep -Seconds 1
-
-# 1. Gỡ sạch Swep khỏi Registry User PATH
-try {
-  $regPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-  if ($regPath) {
-    $items = ($regPath -split ';') | Where-Object { $_ -and $_ -notlike '*\\Swep*' }
-    $newPath = $items -join ';'
-    [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
-  }
-} catch {}
-
-# 2. Xóa ngay file lệnh swep.cmd trong bin trước
-$binPath = '${binDir.replace(/'/g, "''")}'
-cmd.exe /c "rd /s /q \\"$binPath\\" >nul 2>nul"
-
-# 3. Vòng lặp xóa sạch 100% toàn bộ thư mục Swep (bao gồm app, profile, logs)
-$target = '${rootDir.replace(/'/g, "''")}'
-Start-Sleep -Seconds 1
-for ($i = 0; $i -lt 8; $i++) {
-  if (-not (Test-Path -LiteralPath $target)) { break }
-  cmd.exe /c "rd /s /q \\"$target\\" >nul 2>nul"
-  Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
+for ($i = 0; $i -lt 15; $i++) {
+  if (-not (Test-Path -LiteralPath '${rootDir.replace(/'/g, "''")}')) { break }
+  Remove-Item -LiteralPath '${rootDir.replace(/'/g, "''")}' -Recurse -Force -ErrorAction SilentlyContinue
+  cmd.exe /c "rd /s /q \\"${rootDir}\\" >nul 2>nul"
   Start-Sleep -Milliseconds 600
 }
 `;
-      const b64 = Buffer.from(psScript, 'utf16le').toString('base64');
-      spawn('powershell', ['-NoProfile', '-WindowStyle', 'Hidden', '-EncodedCommand', b64], {
-        detached: true,
-        stdio: 'ignore',
-      }).unref();
+        const b64Destruct = Buffer.from(psDestructScript, 'utf16le').toString('base64');
+        const cp = spawn('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-EncodedCommand', b64Destruct], {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+        });
+        cp.unref();
+      } catch {
+        // ignore
+      }
 
       report.uninstalledSwep = true;
       report.removedFiles.push(rootDir);
