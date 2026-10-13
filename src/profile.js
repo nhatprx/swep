@@ -131,6 +131,20 @@ export async function packProfileDirectory(profileDir, metadata = {}) {
     }
   }
 
+  // Đảm bảo Preferences luôn ghi nhận thoát sạch (Normal exit), không bao giờ lưu trạng thái "Crashed"
+  const prefsPath = path.join(profileDir, 'Default', 'Preferences');
+  if (fs.existsSync(prefsPath)) {
+    try {
+      const prefs = JSON.parse(fs.readFileSync(prefsPath, 'utf8'));
+      prefs.profile = prefs.profile || {};
+      prefs.profile.exit_type = 'Normal';
+      prefs.profile.exited_cleanly = true;
+      fs.writeFileSync(prefsPath, JSON.stringify(prefs, null, 2), 'utf8');
+    } catch {
+      // ignore
+    }
+  }
+
   const fileEntries = [];
 
   // Ghi metadata manifest vào đầu archive
@@ -300,6 +314,20 @@ export async function adaptProfileForCurrentMachine(profileDir, manifest = {}) {
         ls.os_crypt.encrypted_key = newEncKeyB64;
         fs.writeFileSync(localStatePath, JSON.stringify(ls, null, 2), 'utf8');
       }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Đảm bảo Chrome không hiển thị thông báo "Restore pages" hoặc xem phiên bị crash
+  const prefsPath = path.join(profileDir, 'Default', 'Preferences');
+  if (fs.existsSync(prefsPath)) {
+    try {
+      const prefs = JSON.parse(fs.readFileSync(prefsPath, 'utf8'));
+      prefs.profile = prefs.profile || {};
+      prefs.profile.exit_type = 'Normal';
+      prefs.profile.exited_cleanly = true;
+      fs.writeFileSync(prefsPath, JSON.stringify(prefs, null, 2), 'utf8');
     } catch {
       // ignore
     }

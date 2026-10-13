@@ -55,38 +55,3 @@ test('vault: zero-server encryption and decryption flow', async () => {
   assert.strictEqual(decryptedPayload.google_email, 'mywork@gmail.com');
   assert.strictEqual(decryptedPayload.google_password, 'superSecretPassword');
 });
-
-test('vault: distributed session concurrency lock and lease expiration', async () => {
-  const { checkSessionLock, createSessionLockData, createReleaseLockData } = await import('../src/vault.js');
-
-  // 1. Initial state: No lock
-  const vaultEmpty = { handle: 'alice' };
-  assert.deepStrictEqual(checkSessionLock(vaultEmpty), { locked: false, isStale: false, lock: null });
-
-  // 2. Active lock on Machine A
-  const lockA = createSessionLockData('Machine-A', 5000); // 5 seconds TTL
-  const vaultLocked = { handle: 'alice', lock: lockA };
-  const statusActive = checkSessionLock(vaultLocked);
-  assert.strictEqual(statusActive.locked, true);
-  assert.strictEqual(statusActive.isStale, false);
-  assert.strictEqual(statusActive.lock.holder, 'Machine-A');
-
-  // 3. Released lock (after swep down)
-  const lockReleased = createReleaseLockData();
-  const vaultReleased = { handle: 'alice', lock: lockReleased };
-  const statusReleased = checkSessionLock(vaultReleased);
-  assert.strictEqual(statusReleased.locked, false);
-
-  // 4. Stale/Expired lock (after crash/timeout)
-  const expiredLock = {
-    active: true,
-    holder: 'Dead-Machine',
-    locked_at: new Date(Date.now() - 600000).toISOString(),
-    expires_at: new Date(Date.now() - 1000).toISOString(),
-  };
-  const vaultExpired = { handle: 'alice', lock: expiredLock };
-  const statusExpired = checkSessionLock(vaultExpired);
-  assert.strictEqual(statusExpired.locked, false);
-  assert.strictEqual(statusExpired.isStale, true);
-  assert.strictEqual(statusExpired.lock.holder, 'Dead-Machine');
-});

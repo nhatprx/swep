@@ -175,7 +175,16 @@ export async function killSwepChromeProcesses(rootDir) {
   try {
     const psScript = `
 $procs = Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" | Where-Object { $_.CommandLine -like '*chrome-profile*' }
+# 1. Thử gửi tín hiệu đóng nhẹ nhàng trước
 foreach ($p in $procs) {
+    try {
+        taskkill /PID $p.ProcessId /T | Out-Null
+    } catch {}
+}
+Start-Sleep -Milliseconds 600
+# 2. Nếu còn tiến trình kẹt thì mới cưỡng chế
+$remainingProcs = Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" | Where-Object { $_.CommandLine -like '*chrome-profile*' }
+foreach ($p in $remainingProcs) {
     try {
         taskkill /PID $p.ProcessId /T /F | Out-Null
         $p.ProcessId

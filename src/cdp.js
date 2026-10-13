@@ -211,3 +211,33 @@ export async function getCookiesViaCDP(port) {
     };
   });
 }
+
+/**
+ * Đóng Chrome nhẹ nhàng qua CDP Browser.close để flush sạch database và ghi exit_type Normal
+ * @param {number} port
+ * @returns {Promise<boolean>}
+ */
+export async function closeChromeViaCDP(port) {
+  if (!port) return false;
+  try {
+    const wsUrl = await getCDPWebSocketUrl(port, 3);
+    return new Promise((resolve) => {
+      const ws = new WebSocket(wsUrl);
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ id: 999, method: 'Browser.close' }));
+        setTimeout(() => {
+          try { ws.close(); } catch {}
+          resolve(true);
+        }, 1200);
+      };
+      ws.onmessage = () => {
+        try { ws.close(); } catch {}
+        resolve(true);
+      };
+      ws.onerror = () => resolve(false);
+      setTimeout(() => resolve(false), 2500);
+    });
+  } catch {
+    return false;
+  }
+}

@@ -6,7 +6,6 @@
 
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import chalk from 'chalk';
 import {
   printBanner,
@@ -23,13 +22,7 @@ import {
   aead_decrypt,
   normalizeCode,
 } from '../crypto.js';
-import {
-  fetchVault,
-  fetchProfileCapsuleFromGitHub,
-  checkSessionLock,
-  createSessionLockData,
-  uploadVaultToGitHub,
-} from '../vault.js';
+import { fetchVault, fetchProfileCapsuleFromGitHub } from '../vault.js';
 import { defaultGate } from '../gate.js';
 import {
   findChromePath,
@@ -106,35 +99,6 @@ export async function loginCommand(options = {}) {
 
     const displayAccount = userPayload.google_email || `@${handle}`;
     spinAuth.succeed(`Đã tải và giải mã thành công vault từ GitHub: ${chalk.bold.cyan(displayAccount)}`);
-
-    // Kiểm tra khóa phiên đồng thời (Distributed Mutex Lock) để tránh mở 2 máy cùng lúc
-    const lockStatus = checkSessionLock(vaultData);
-    if (lockStatus.locked) {
-      console.log(chalk.bold.yellow('\n⚠️  CẢNH BÁO: TÀI KHOẢN ĐANG HOẠT ĐỘNG TRÊN MÁY KHÁC!'));
-      console.log(chalk.white(`   Thiết bị đang chạy: ${chalk.bold.cyan(lockStatus.lock.holder || 'Không rõ')}`));
-      console.log(chalk.white(`   Bắt đầu từ lúc:     ${new Date(lockStatus.lock.locked_at).toLocaleTimeString()}`));
-      console.log(chalk.white(`   Hết hạn dự kiến:    ${new Date(lockStatus.lock.expires_at).toLocaleTimeString()}`));
-      console.log(chalk.yellow('\n⚠️  Nếu bạn mở cùng lúc trên 2 máy, Google & các dịch vụ sẽ phát hiện xung đột session và kick đăng xuất cả 2!'));
-
-      const choice = await prompt('\nBạn muốn làm gì? [1] Thoát an toàn (giữ phiên máy cũ)  |  [2] Cưỡng chế chiếm quyền (Force Unlock)');
-      if (choice !== '2' && (choice || '').trim().toLowerCase() !== 'force') {
-        console.log(chalk.green('\n✔ Đã hủy bỏ đăng nhập để bảo vệ phiên làm việc của máy đang chạy.\n'));
-        return;
-      }
-      console.log(chalk.yellow('\n⚡ Đang cưỡng chế chiếm quyền phiên làm việc (Takeover Lock)...'));
-    } else if (lockStatus.isStale) {
-      console.log(chalk.dim(`\nℹ Phiên làm việc trước tại '${lockStatus.lock.holder}' đã hết hạn khóa (stale lock). Tự động chiếm quyền.`));
-    }
-
-    // Chiếm quyền khóa phiên (Acquire Lock) để bảo vệ phiên hiện tại
-    if (userPayload.github_pat) {
-      try {
-        vaultData.lock = createSessionLockData(os.hostname(), 5 * 60 * 1000);
-        await uploadVaultToGitHub(userPayload.github_pat, handle, vaultData);
-      } catch {
-        // ignore
-      }
-    }
   } catch (vaultErr) {
     // Nếu không tải được từ GitHub Vault, thử fallback sang Swep Gate nếu có
     try {
@@ -241,19 +205,20 @@ export async function loginCommand(options = {}) {
   // 6. Mở Chrome với Profile cô lập + CDP Port
   console.log(chalk.green('\n✔ Đang mở Chrome với profile tạm thời của Swep...'));
 
-  if (initialCookies.length > 0 || restoredCapsule) {
-    // ĐÃ CÓ PHIÊN HOẶC PROFILE CAPSULE:
-    // Khởi chạy Chrome với about:blank trước để tránh việc Chrome gọi request rỗng (race condition)
+  if (restoredCapsule) {
+    // ĐÃ KHÔI PHỤC TOÀN BỘ PROFILE CAPSULE (Cookies, Local Storage, LevelDB, DPAPI Key):
+    // Khởi chạy Chrome trực tiếp tới targetUrl. Không nạp cookies qua CDP để tránh làm hỏng SQLite
+    await launchIsolatedChrome(chromeExe, rootDir, targetUrl, cdpPort);
+    console.log(chalk.bold.green(`✔ Chrome đã sẵn sàng với profile và phiên làm việc đầy đủ!`));
+  } else if (initialCookies.length > 0) {
+    // CHẾ ĐỘ DỰ PHÒNG: Chỉ có cookies dự phòng
     await launchIsolatedChrome(chromeExe, rootDir, 'about:blank', cdpPort);
 
     const spinCapsule = createSpinner(`Đang khởi động Chrome Profile...`);
     try {
-      // Chỉ nạp cookies qua CDP nếu không có Profile Capsule đầy đủ (chế độ fallback)
-      if (!restoredCapsule && initialCookies.length > 0) {
-        await injectCookiesViaCDP(cdpPort, initialCookies);
-      }
+      await injectCookiesViaCDP(cdpPort, initialCookies);
       await navigatePageViaCDP(cdpPort, targetUrl);
-      spinCapsule.succeed(chalk.bold.green(`✔ Chrome đã sẵn sàng với profile và phiên làm việc đầy đủ!`));
+      spinCapsule.succeed(chalk.bold.green(`✔ Chrome đã sẵn sàng với phiên làm việc đầy đủ!`));
     } catch (err) {
       spinCapsule.warn(chalk.yellow(`Không thể điều hướng qua CDP: ${err.message}`));
       await openSwepChrome(rootDir, targetUrl, cdpPort);
@@ -279,18 +244,6 @@ export async function loginCommand(options = {}) {
       // ignore
     }
   }, 5000);
-
-  // Duy trì Session Lock trên GitHub mỗi 60 giây (Lease Renewal)
-  const lockHeartbeat = setInterval(async () => {
-    if (userPayload.github_pat) {
-      try {
-        vaultData.lock = createSessionLockData(os.hostname(), 5 * 60 * 1000);
-        await uploadVaultToGitHub(userPayload.github_pat, handle, vaultData);
-      } catch {
-        // ignore
-      }
-    }
-  }, 60000);
 
   // 8. Bật Màn hình điều khiển phiên trực tiếp (Live Session Dashboard & 2FA Ticker)
   await startLiveSessionDashboard({

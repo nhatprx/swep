@@ -12,13 +12,9 @@ import { printBanner, printBox, createSpinner } from '../ui.js';
 import { getSwepRoot, killSwepChromeProcesses } from '../chrome.js';
 import { performCleanup } from '../cleanup.js';
 import { readActiveSession, removeActiveSession } from '../bridge.js';
-import {
-  uploadVaultToGitHub,
-  uploadProfileCapsuleToGitHub,
-  createReleaseLockData,
-} from '../vault.js';
+import { uploadVaultToGitHub, uploadProfileCapsuleToGitHub } from '../vault.js';
 import { aead_encrypt } from '../crypto.js';
-import { getCookiesViaCDP } from '../cdp.js';
+import { getCookiesViaCDP, closeChromeViaCDP } from '../cdp.js';
 import { packProfileDirectory, encryptCapsule } from '../profile.js';
 
 export async function downCommand(options = {}) {
@@ -86,6 +82,12 @@ export async function downCommand(options = {}) {
 
   if (!options.dryRun) {
     const spinClose = createSpinner('Đang đóng tiến trình Chrome và đợi flush dữ liệu xuống đĩa...');
+    // 1. Thử đóng nhẹ nhàng qua CDP Browser.close trước
+    if (activeSession && activeSession.cdpPort) {
+      await closeChromeViaCDP(activeSession.cdpPort);
+      await new Promise((r) => setTimeout(r, 1200));
+    }
+    // 2. Tắt các tiến trình phụ còn sót lại
     killedCount = await killSwepChromeProcesses(rootDir);
     // Chờ 1.5s để Windows giải phóng file handles và hoàn tất checkpoint WAL
     await new Promise((r) => setTimeout(r, 1500));
@@ -131,7 +133,6 @@ export async function downCommand(options = {}) {
         wrap_recovery: activeSession.wrap_recovery,
         payload: encryptedPayload,
         updated_at: new Date().toISOString(),
-        lock: createReleaseLockData(),
       };
       await uploadVaultToGitHub(activeSession.github_pat, activeSession.handle, vaultData);
     } catch (capsuleErr) {
