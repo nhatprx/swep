@@ -1,21 +1,26 @@
-# Swep Bootstrap Installer for Windows
-# Usage: irm https://raw.githubusercontent.com/nhatprx/swep/v0.1.0/install.ps1 | iex
+# Swep One-liner Bootstrap Installer for Windows
+# Chạy một lệnh trên máy mượn:
+# irm https://raw.githubusercontent.com/nhatprx/swep/main/install.ps1 | iex
 
 [CmdletBinding()]
-param()
+param(
+    [switch]$Help
+)
 
 $ErrorActionPreference = 'Stop'
 
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "  ⚡ Cài đặt Swep - Disposable Workplace & Chrome Profile  " -ForegroundColor Cyan
+Write-Host "  ⚡ Swep - Khởi tạo môi trường làm việc tạm thời        " -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-# 1. Kiểm tra Hệ điều hành
-if ($PSVersionTable.PSEdition -ne "Desktop" -and $PSVersionTable.PSEdition -ne "Core") {
-    Write-Warning "Khuyến nghị chạy trên Windows PowerShell 5.1+ hoặc PowerShell 7+."
+# 1. Hàm làm mới biến môi trường PATH
+function Refresh-EnvPath {
+    $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+    $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+    $env:Path = "$machinePath;$userPath"
 }
 
-# 2. Kiểm tra Node.js
+# 2. Kiểm tra & Tự động cài đặt Node.js nếu máy chưa có
 $nodeInstalled = $false
 try {
     $nodeVer = & node --version 2>$null
@@ -31,46 +36,69 @@ try {
 }
 
 if (-not $nodeInstalled) {
-    Write-Host "Chưa có Node.js (yêu cầu >= 18). Đang tiến hành cài đặt qua winget..." -ForegroundColor Yellow
+    Write-Host "⏳ Chưa có Node.js trên máy (yêu cầu >= 18). Đang tự động cài qua winget..." -ForegroundColor Yellow
     try {
         winget install OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements
-        Write-Host "✔ Đã cài đặt Node.js thành công. Vui lòng mở lại PowerShell để nhận biến môi trường." -ForegroundColor Green
+        Refresh-EnvPath
+        Write-Host "✔ Đã cài đặt Node.js thành công!" -ForegroundColor Green
     } catch {
-        Write-Error "Không thể tự động cài Node.js. Vui lòng tải từ https://nodejs.org và thử lại."
+        Write-Error "Không thể cài đặt Node.js tự động. Vui lòng tải Node.js từ https://nodejs.org"
         exit 1
     }
 }
 
-# 3. Thư mục cài đặt Swep (%LOCALAPPDATA%\Swep\bin)
-$installDir = Join-Path $env:LOCALAPPDATA "Swep"
-$binDir = Join-Path $installDir "bin"
+# 3. Chuẩn bị thư mục Swep (%LOCALAPPDATA%\Swep)
+$swepDir = Join-Path $env:LOCALAPPDATA "Swep"
+$appDir = Join-Path $swepDir "app"
+$binDir = Join-Path $swepDir "bin"
+$zipPath = Join-Path $swepDir "swep.zip"
 
 if (-not (Test-Path $binDir)) {
     New-Item -ItemType Directory -Path $binDir -Force | Out-Null
 }
 
-# Tạo wrapper bat/ps1 để gọi swep từ bất kỳ đâu
-$batPath = Join-Path $binDir "swep.cmd"
-$currentDir = (Get-Location).Path
-$entryPoint = Join-Path $currentDir "bin\swep.js"
+# 4. Tải mã nguồn mới nhất từ GitHub nếu chưa có
+$entryPoint = Join-Path $appDir "bin\swep.js"
+if (-not (Test-Path $entryPoint)) {
+    Write-Host "⏳ Đang tải Swep từ GitHub..." -ForegroundColor Cyan
+    $repoZipUrl = "https://github.com/nhatprx/swep/archive/refs/heads/main.zip"
+    
+    Invoke-WebRequest -Uri $repoZipUrl -OutFile $zipPath -UseBasicParsing
+    
+    Write-Host "⏳ Đang giải nén Swep..." -ForegroundColor Cyan
+    Expand-Archive -Path $zipPath -DestinationPath $swepDir -Force
+    Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
 
-if (Test-Path $entryPoint) {
-    Set-Content -Path $batPath -Value "@echo off`r`nnode `"$entryPoint`" %*" -Force
-} else {
-    # Nếu cài từ npm global
-    npm install -g swep
+    $extractedFolder = Join-Path $swepDir "swep-main"
+    if (Test-Path $appDir) {
+        Remove-Item -Path $appDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Move-Item -Path $extractedFolder -Destination $appDir -Force
+
+    Write-Host "⏳ Đang cài đặt thư viện phụ thuộc..." -ForegroundColor Cyan
+    Push-Location $appDir
+    try {
+        npm install --omit=dev --no-audit --no-fund --silent
+    } finally {
+        Pop-Location
+    }
+    Write-Host "✔ Tải và cài đặt Swep hoàn tất!" -ForegroundColor Green
 }
 
-# 4. Thêm vào PATH nếu chưa có
+# 5. Tạo lệnh 'swep' toàn cục trên máy
+$cmdPath = Join-Path $binDir "swep.cmd"
+$cmdContent = "@echo off`r`nnode `"$entryPoint`" %*"
+Set-Content -Path $cmdPath -Value $cmdContent -Force
+
+# Thêm vào User PATH nếu chưa có
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$binDir*") {
     [Environment]::SetEnvironmentVariable("Path", "$userPath;$binDir", "User")
     $env:Path = "$env:Path;$binDir"
-    Write-Host "✔ Đã thêm $binDir vào User PATH" -ForegroundColor Green
+    Write-Host "✔ Đã đăng ký lệnh 'swep' vào hệ thống." -ForegroundColor Green
 }
 
-Write-Host "`n🎉 Cài đặt Swep hoàn tất!" -ForegroundColor Green
-Write-Host "Bây giờ bạn có thể gõ lệnh bên dưới để kiểm tra:" -ForegroundColor Cyan
-Write-Host "   swep doctor" -ForegroundColor White
-Write-Host "Hoặc đăng nhập vào môi trường:" -ForegroundColor Cyan
-Write-Host "   swep" -ForegroundColor White
+Write-Host "`n🚀 Đang khởi động Swep...`n" -ForegroundColor Green
+
+# 6. Chạy Swep ngay lập tức
+& node $entryPoint
