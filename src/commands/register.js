@@ -5,6 +5,7 @@
  */
 
 import chalk from 'chalk';
+import ora from 'ora';
 import { printBanner, printBox, prompt, promptConfirm, createSpinner } from '../ui.js';
 import { openCleanBrowserForGitHub, getClipboardText } from '../chrome.js';
 import { getGitHubUser } from '../github.js';
@@ -55,15 +56,29 @@ export async function registerCommand(options) {
       continue;
     }
 
+    const spinCheck = ora({
+      text: 'Validating GitHub token...',
+      color: 'cyan',
+      spinner: 'dots',
+    }).start();
+
     try {
       const user = await getGitHubUser(cleanToken);
       handle = user.handle;
+      spinCheck.stop();
       break;
     } catch (err) {
-      console.error(`error: invalid token: ${err.message}`);
+      spinCheck.stop();
+      console.error(`error: invalid token (${err.message})`);
       cleanToken = '';
     }
   }
+
+  const spinner = ora({
+    text: 'Generating client-side encryption keys...',
+    color: 'cyan',
+    spinner: 'dots',
+  }).start();
 
   const dek = generateDEK();
   const rawPayload = {
@@ -97,18 +112,25 @@ export async function registerCommand(options) {
   };
 
   if (!options.dryRun) {
+    spinner.text = 'Initializing swep-vault repository on GitHub...';
     try {
       await ensureVaultRepo(cleanToken);
+      spinner.text = 'Uploading encrypted vault to GitHub...';
       await uploadVaultToGitHub(cleanToken, handle, vaultData);
     } catch (err) {
+      spinner.stop();
       console.error(`error: ${err.message}`);
       return;
     }
   }
 
+  spinner.stop();
+
   const fullLoginCode = `${handle}-${rawCode}`;
-  console.log(`login code:   ${fullLoginCode}`);
-  console.log(`recovery key: ${recoveryKey}`);
-  console.log(`vault repo:   https://github.com/${handle}/swep-vault`);
-  console.log(`Registered. Run 'swep ${fullLoginCode}' to start.`);
+  console.log();
+  console.log(chalk.dim('  login code:   ') + chalk.bold.green(fullLoginCode));
+  console.log(chalk.dim('  recovery key: ') + chalk.bold.yellow(recoveryKey));
+  console.log(chalk.dim('  vault repo:   ') + chalk.cyan(`https://github.com/${handle}/swep-vault`));
+  console.log();
+  console.log(`Registered. Run 'swep ${chalk.bold.green(fullLoginCode)}' to start.\n`);
 }
