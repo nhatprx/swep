@@ -25,6 +25,7 @@ import {
   locateAppStorageCandidates,
   inspectAppStorageFootprint,
 } from '../src/cortex/sniffer.js';
+import { LiveLogger } from '../src/cortex/monitor.js';
 
 test('cortex observer: detectProjectConfigs correctly analyzes project directory', () => {
   const currentDir = process.cwd();
@@ -172,4 +173,35 @@ test('cortex sniffer: locateAppStorageCandidates and inspectAppStorageFootprint'
   } finally {
     fs.rmSync(tempAppDir, { recursive: true, force: true });
   }
+});
+
+test('cortex monitor: LiveLogger rolling 10-line buffer and formatting', () => {
+  const logger = new LiveLogger({
+    maxLines: 10,
+    account: 'test@gmail.com',
+    maskedKey: 'nhatprx-7Kxx-xxx9',
+    projectName: 'swep-dev',
+  });
+
+  // Add 15 logs
+  for (let i = 1; i <= 15; i++) {
+    logger.log(`Event number ${i}`);
+  }
+
+  // Must cap at 10 lines
+  assert.strictEqual(logger.logs.length, 10);
+  assert.ok(logger.logs[0].includes('Event number 6'));
+  assert.ok(logger.logs[9].includes('Event number 15'));
+
+  // Frame formatting
+  const frame = logger.formatFrame();
+  assert.ok(frame.includes('SWEP LIVE WORKSPACE MONITOR'));
+  assert.ok(frame.includes('test@gmail.com'));
+  assert.ok(frame.includes('nhatprx-7Kxx-xxx9'));
+  assert.ok(frame.includes('swep-dev'));
+  assert.ok(frame.includes('Event number 15'));
+  assert.ok(frame.includes('Save & Exit'));
+
+  logger.clear();
+  assert.strictEqual(logger.isStopping, true);
 });

@@ -41,6 +41,7 @@ import {
 } from '../cleanup.js';
 import { detectProjectContext, scanActiveListeningPorts } from '../cortex/observer.js';
 import { saveCortexMemory, predictWorkspaceRequirements, formatCortexInsights } from '../cortex/habit.js';
+import { startLiveWorkspaceMonitor } from '../cortex/monitor.js';
 
 export async function loginCommand(codeOrOptions, maybeOptions = {}) {
   let passedCode = typeof codeOrOptions === 'string' ? codeOrOptions : null;
@@ -244,6 +245,23 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
     if (prediction) {
       console.log();
       console.log(formatCortexInsights(prediction, activePorts.map((p) => p.port)));
+    }
+
+    // Nếu môi trường là interactive terminal và không chọn --detach, khởi chạy Live Monitor
+    if (!options.dryRun && !options.detach && process.stdin.isTTY) {
+      console.log();
+      await startLiveWorkspaceMonitor({
+        rootDir,
+        activeSession: {
+          handle,
+          inputCode,
+          google_email: userPayload.google_email || handle,
+          userPayload,
+        },
+        project,
+        browserExe,
+        cdpPort,
+      });
     }
   } catch {
     // ignore

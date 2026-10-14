@@ -240,6 +240,8 @@ export async function captureCurrentWorkspaceSnapshot(projectDir = process.cwd()
 
   // Lọc ra các port dev có ý nghĩa (database, web server...)
   const devPorts = activePorts.filter((p) => p.serviceInfo !== null || (p.port >= 3000 && p.port <= 9999));
+  const containers = await detectActiveDockerContainers();
+  const ides = await detectRunningIDEs(projectDir);
 
   return {
     timestamp: new Date().toISOString(),
@@ -247,5 +249,71 @@ export async function captureCurrentWorkspaceSnapshot(projectDir = process.cwd()
     devPorts,
     allListeningPortsCount: activePorts.length,
     browserTabs,
+    containers,
+    ides,
   };
+}
+
+/**
+ * Phát hiện các container Docker đang chạy (nếu có daemon)
+ * @returns {Promise<Array<{ id: string, name: string, image: string, ports: string }>>}
+ */
+export async function detectActiveDockerContainers() {
+  try {
+    const script = `
+try {
+  $out = docker ps --format "{{.ID}}|{{.Names}}|{{.Image}}|{{.Ports}}" 2>$null
+  if ($out) { $out }
+} catch {}
+`;
+    const stdout = await runHiddenPowerShell(script);
+    if (!stdout) return [];
+    return stdout
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => {
+        const [id, name, image, ports] = l.split('|');
+        return { id: id || '', name: name || '', image: image || '', ports: ports || '' };
+      });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Phát hiện IDE đang hoạt động (Cursor, VS Code, JetBrains)
+ * @param {string} [projectDir=process.cwd()]
+ * @returns {Promise<Array<{ name: string, pid: number, isProjectActive: boolean }>>}
+ */
+export async function detectRunningIDEs(projectDir = process.cwd()) {
+  try {
+    const escapedRoot = projectDir.replace(/'/g, "''");
+    const script = `
+$targetNames = @('Cursor.exe', 'Code.exe', 'idea64.exe', 'webstorm64.exe')
+$procs = Get-CimInstance Win32_Process | Where-Object { $_.Name -in $targetNames }
+$results = @()
+foreach ($p in $procs) {
+  $isActive = ($p.CommandLine -and ($p.CommandLine -like "*${escapedRoot}*"))
+  $results += "$($p.Name)|$($p.ProcessId)|$isActive"
+}
+$results -join "\`n"
+`;
+    const stdout = await runHiddenPowerShell(script);
+    if (!stdout) return [];
+    return stdout
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => {
+        const [name, pid, active] = l.split('|');
+        return {
+          name: name ? name.replace(/\.exe$/i, '') : 'IDE',
+          pid: parseInt(pid, 10) || 0,
+          isProjectActive: active === 'True',
+        };
+      });
+  } catch {
+    return [];
+  }
 }

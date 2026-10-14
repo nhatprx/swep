@@ -41,7 +41,7 @@ if (process.argv[2] === '_watchdog') {
   process.on('SIGBREAK', onSignal);
   process.on('SIGHUP', onSignal);
 
-  const version = '0.1.11';
+  const version = '0.1.12';
 
   program
     .name('swep')
@@ -68,6 +68,7 @@ if (process.argv[2] === '_watchdog') {
     .description('Launch workspace with login code (default)')
     .option('--browser <name>', 'Preferred browser (chrome, edge, brave)')
     .option('--dry-run', 'Print actions without executing')
+    .option('--detach', 'Return terminal immediately without live monitoring')
     .option('--root <path>', 'Workspace root directory')
     .action((code, options) => loginCommand(code, options));
 

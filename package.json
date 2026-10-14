@@ -1,6 +1,6 @@
 {
   "name": "@nhatprx/swep",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Swep: Một lệnh để bắt đầu → nhập mã cá nhân → Chrome đã đăng nhập Google",
   "type": "module",
   "bin": {
