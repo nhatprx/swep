@@ -22,6 +22,8 @@ import {
 } from '../crypto.js';
 import { getCookiesViaCDP, closeChromeViaCDP } from '../cdp.js';
 import { packProfileDirectory, encryptCapsule } from '../profile.js';
+import { captureCurrentWorkspaceSnapshot } from '../cortex/observer.js';
+import { loadCortexMemory, saveCortexMemory, recordWorkspaceSession } from '../cortex/habit.js';
 
 export async function checkoutCommand(options = {}) {
   const rootDir = getSwepRoot(options.root);
@@ -145,6 +147,17 @@ export async function checkoutCommand(options = {}) {
       };
       if (activeSession.google_email) userPayload.google_email = activeSession.google_email;
       delete userPayload.google_password;
+
+      // Ghi nhận Cortex session memory
+      try {
+        const snapshot = await captureCurrentWorkspaceSnapshot(process.cwd(), activeSession.cdpPort);
+        const cortexData = loadCortexMemory(rootDir, userPayload);
+        recordWorkspaceSession(cortexData, snapshot);
+        saveCortexMemory(rootDir, cortexData);
+        userPayload.cortex = cortexData;
+      } catch {
+        // ignore cortex recording failures
+      }
 
       // Mã hóa payload mới bằng newDek
       const encryptedPayload = aead_encrypt(newDek, userPayload, `${activeSession.handle}/1`);

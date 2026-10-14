@@ -61,6 +61,7 @@ npm install -g @nhatprx/swep
 | `swep doctor` | - | Diagnose environment prerequisites and network connectivity. |
 | `swep recover` | - | Recover vault access using the Recovery Key. |
 | `swep revoke` | - | Revoke active access codes and disable vault access. |
+| `swep cortex` | `swep status`, `swep habits` | Inspect workspace context, running dev ports, and habit predictions. |
 | `swep update` | - | Check and update Swep to the latest release. |
 | `swep -v` | `swep --version` | Display installed version. |
 

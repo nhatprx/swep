@@ -16,6 +16,7 @@ import {
   openCommand,
   checkoutCommand,
   updateCommand,
+  cortexCommand,
 } from '../src/commands/index.js';
 import { runWatchdog, silentCheckout } from '../src/watchdog.js';
 import { getSwepRoot } from '../src/chrome.js';
@@ -40,7 +41,7 @@ if (process.argv[2] === '_watchdog') {
   process.on('SIGBREAK', onSignal);
   process.on('SIGHUP', onSignal);
 
-  const version = '0.1.10';
+  const version = '0.1.11';
 
   program
     .name('swep')
@@ -48,7 +49,7 @@ if (process.argv[2] === '_watchdog') {
     .version(version, '-v, -V, --version', 'Show version');
   const KNOWN_COMMANDS = new Set([
     'up', 'login', 'open', 'chrome', 'checkout', 'exit', 'down',
-    'register', 'recover', 'revoke', 'doctor', 'update', 'help', '_watchdog'
+    'register', 'recover', 'revoke', 'doctor', 'update', 'cortex', 'status', 'habits', 'help', '_watchdog'
   ]);
 
   const firstArg = process.argv[2];
@@ -127,6 +128,16 @@ if (process.argv[2] === '_watchdog') {
     .command('update')
     .description('Check and update Swep to the latest version')
     .action(() => updateCommand(version));
+
+  // Cortex command: swep cortex (status / habits)
+  program
+    .command('cortex')
+    .alias('status')
+    .alias('habits')
+    .description('View workspace context, detected services, and habit predictions')
+    .option('--sniff <app>', 'Sniff storage and config locations for an application')
+    .option('--root <path>', 'Workspace root directory')
+    .action((options) => cortexCommand(options));
 
   program.parse(process.argv);
 }

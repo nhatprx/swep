@@ -39,6 +39,8 @@ import {
   takeBeforeSnapshot,
   recordLedger,
 } from '../cleanup.js';
+import { detectProjectContext, scanActiveListeningPorts } from '../cortex/observer.js';
+import { saveCortexMemory, predictWorkspaceRequirements, formatCortexInsights } from '../cortex/habit.js';
 
 export async function loginCommand(codeOrOptions, maybeOptions = {}) {
   let passedCode = typeof codeOrOptions === 'string' ? codeOrOptions : null;
@@ -230,4 +232,20 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
   const account = userPayload.google_email || handle;
   console.log(chalk.dim('key-id: ') + chalk.cyan(maskKey(inputCode)) + chalk.dim(' (active)'));
   console.log(`Workspace ready for ${account}. Run 'swep checkout' or 'swep exit' when done.`);
+
+  // Cortex Memory & Habit Insights
+  try {
+    if (userPayload.cortex) {
+      saveCortexMemory(rootDir, userPayload.cortex);
+    }
+    const project = await detectProjectContext(process.cwd());
+    const activePorts = await scanActiveListeningPorts();
+    const prediction = predictWorkspaceRequirements(userPayload.cortex || {}, project.projectId);
+    if (prediction) {
+      console.log();
+      console.log(formatCortexInsights(prediction, activePorts.map((p) => p.port)));
+    }
+  } catch {
+    // ignore
+  }
 }

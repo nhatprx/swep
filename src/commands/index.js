@@ -11,4 +11,5 @@ export { doctorCommand } from './doctor.js';
 export { openCommand, chromeCommand } from './open.js';
 export { checkoutCommand } from './checkout.js';
 export { updateCommand } from './update.js';
+export { cortexCommand } from './cortex.js';
 
