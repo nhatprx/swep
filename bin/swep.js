@@ -41,7 +41,7 @@ if (process.argv[2] === '_watchdog') {
   process.on('SIGBREAK', onSignal);
   process.on('SIGHUP', onSignal);
 
-  const version = '0.1.12';
+  const version = '0.1.13';
 
   program
     .name('swep')
