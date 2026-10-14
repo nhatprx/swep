@@ -41,7 +41,7 @@ if (process.argv[2] === '_watchdog') {
   process.on('SIGBREAK', onSignal);
   process.on('SIGHUP', onSignal);
 
-  const version = '0.1.13';
+  const version = '0.1.14';
 
   program
     .name('swep')
@@ -137,6 +137,7 @@ if (process.argv[2] === '_watchdog') {
     .alias('habits')
     .description('View workspace context, detected services, and habit predictions')
     .option('--sniff <app>', 'Sniff storage and config locations for an application')
+    .option('--git', 'Preview git dual-layer state snapshot for current project')
     .option('--root <path>', 'Workspace root directory')
     .action((options) => cortexCommand(options));
 

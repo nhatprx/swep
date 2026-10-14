@@ -338,3 +338,132 @@ if (Test-Path $npmDir) {
 
   return report;
 }
+
+/**
+ * Ghi nhận receipt xác minh upload thành công kèm mã băm SHA-256
+ * @param {string} sessionDir
+ * @param {{ sha256: string, remoteTarget: string, timestamp?: string }} receiptData
+ */
+export function recordUploadReceipt(sessionDir, receiptData) {
+  const receiptFile = path.join(sessionDir, 'upload.receipt.json');
+  fs.writeFileSync(receiptFile, JSON.stringify({
+    verified: true,
+    timestamp: new Date().toISOString(),
+    ...receiptData,
+  }, null, 2), 'utf8');
+}
+
+/**
+ * Kiểm tra xem session đã có receipt xác minh upload thành công hay chưa
+ * @param {string} sessionDir
+ * @returns {{ verified: boolean, receipt: object|null }}
+ */
+export function verifyUploadReceipt(sessionDir) {
+  const receiptFile = path.join(sessionDir, 'upload.receipt.json');
+  if (!fs.existsSync(receiptFile)) return { verified: false, receipt: null };
+  try {
+    const data = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
+    if (data.verified && data.sha256) {
+      return { verified: true, receipt: data };
+    }
+    return { verified: false, receipt: null };
+  } catch {
+    return { verified: false, receipt: null };
+  }
+}
+
+/**
+ * Lấy thời điểm tạo tiến trình (Process Creation Time) trên Windows để tránh lỗi PID reuse
+ * @param {number} pid
+ * @returns {Promise<string|null>}
+ */
+export async function getProcessCreationTime(pid) {
+  if (!pid) return null;
+  try {
+    const psScript = `(Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}").CreationDate.ToString("o")`;
+    const out = await runHiddenPowerShell(psScript);
+    return out ? out.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Kiểm tra tiến trình có thực sự còn sống và đúng thời điểm tạo hay không
+ * @param {number} pid
+ * @param {string|null} [expectedCreationTime=null]
+ * @returns {Promise<boolean>}
+ */
+export async function isProcessAliveWithCreationTime(pid, expectedCreationTime = null) {
+  if (!pid) return false;
+  try {
+    const currentCreationTime = await getProcessCreationTime(pid);
+    if (!currentCreationTime) return false;
+    if (expectedCreationTime) {
+      return currentCreationTime === expectedCreationTime;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Crash Janitor: Dọn dẹp session mồ côi theo nguyên tắc cách ly (Quarantine)
+ * - Session đã verify: Xóa an toàn
+ * - Session CHƯA verify: Di chuyển vào thư mục quarantine, tuyệt đối KHÔNG XÓA!
+ * @param {string} swepRoot
+ * @returns {Promise<{ cleaned: string[], quarantined: string[] }>}
+ */
+export async function runSessionJanitor(swepRoot) {
+  const sessionsDir = path.join(swepRoot, 'runtime', 'sessions');
+  const quarantineDir = path.join(swepRoot, 'quarantine');
+  const report = { cleaned: [], quarantined: [] };
+
+  if (!fs.existsSync(sessionsDir)) return report;
+
+  const entries = fs.readdirSync(sessionsDir);
+  for (const entry of entries) {
+    const sessionDir = path.join(sessionsDir, entry);
+    if (!fs.statSync(sessionDir).isDirectory()) continue;
+
+    const lockFile = path.join(sessionDir, 'session.lock');
+    let isAlive = false;
+
+    if (fs.existsSync(lockFile)) {
+      try {
+        const lockData = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
+        isAlive = await isProcessAliveWithCreationTime(lockData.pid, lockData.creationTime);
+      } catch {
+        isAlive = false;
+      }
+    }
+
+    if (!isAlive) {
+      // Tiến trình đã chết, kiểm tra xem đã upload thành công chưa
+      const check = verifyUploadReceipt(sessionDir);
+      if (check.verified) {
+        // Đã có bản xác minh: Xóa an toàn
+        await removeDirectoryRecursive(sessionDir);
+        report.cleaned.push(entry);
+      } else {
+        // CHƯA CÓ BẢN XÁC MINH: Cách ly an toàn vào quarantine, KHÔNG XÓA
+        if (!fs.existsSync(quarantineDir)) {
+          fs.mkdirSync(quarantineDir, { recursive: true });
+        }
+        const dest = path.join(quarantineDir, entry);
+        if (!fs.existsSync(dest)) {
+          try {
+            fs.renameSync(sessionDir, dest);
+            report.quarantined.push(entry);
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+  }
+
+  return report;
+}
+

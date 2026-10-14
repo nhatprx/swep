@@ -9,10 +9,35 @@ import { readActiveSession, maskKey } from '../bridge.js';
 import { detectProjectContext, scanActiveListeningPorts } from '../cortex/observer.js';
 import { loadCortexMemory, predictWorkspaceRequirements, formatCortexInsights } from '../cortex/habit.js';
 import { locateAppStorageCandidates, inspectAppStorageFootprint } from '../cortex/sniffer.js';
+import { captureGitStateBundle } from '../cortex/git_engine.js';
 
 export async function cortexCommand(options = {}) {
   const rootDir = getSwepRoot(options.root);
   const activeSession = readActiveSession(rootDir);
+
+  // Nếu người dùng muốn xem preview Git snapshot: `swep cortex --git`
+  if (options.git) {
+    try {
+      const gitState = captureGitStateBundle(process.cwd());
+      console.log(chalk.bold.cyan('\n📦 [SWEP CORTEX GIT ENGINE] Snapshot Preview:'));
+      console.log(`  • Branch:   ${chalk.green(gitState.meta.currentBranch || 'detached')}`);
+      console.log(`  • Upstream: ${chalk.dim(gitState.meta.upstreamRef || 'none')}`);
+      console.log(`  • Base:     ${chalk.dim(gitState.meta.baseCommit || 'none')}`);
+      console.log(`  • Bundle:   ${chalk.bold(gitState.bundleBuffer.length)} bytes`);
+      console.log(`  • Untracked files captured: ${chalk.green(gitState.meta.untrackedCount)}`);
+      if (gitState.meta.inProgressState) {
+        console.log(chalk.yellow(`  • In-progress git operations: ${gitState.meta.inProgressState.join(', ')}`));
+      }
+      if (gitState.meta.skippedLargeFiles.length > 0) {
+        console.log(chalk.yellow(`  • Skipped large files (>50MB): ${gitState.meta.skippedLargeFiles.map((f) => f.path).join(', ')}`));
+      }
+      console.log();
+      return;
+    } catch (err) {
+      console.error(chalk.red(`Git snapshot error: ${err.message}`));
+      return;
+    }
+  }
 
   // Nếu người dùng yêu cầu quét ứng dụng mới: `swep cortex --sniff <appName>`
   if (options.sniff) {
