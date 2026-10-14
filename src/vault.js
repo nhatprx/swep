@@ -6,10 +6,157 @@
 import axios from 'axios';
 
 /**
- * Tải file vault.json trực tiếp từ GitHub mà không cần token
- * @param {string} handle - GitHub username
- * @returns {Promise<object>} Dữ liệu vault đã mã hóa
+ * Kiểm tra xem target có phải là Secret Gist ID không
+ * @param {string} target
+ * @returns {boolean}
  */
+export function isGistTarget(target) {
+  if (!target || typeof target !== 'string') return false;
+  if (target.startsWith('gist:')) return true;
+  return /^[a-f0-9]{16,40}$/i.test(target);
+}
+
+/**
+ * Tạo Secret Gist trên GitHub chứa vault.json và profile.capsule.enc.b64
+ * @param {string} token - GitHub PAT (chỉ cần scope 'gist')
+ * @param {object} vaultData
+ * @param {Buffer|null} [encryptedCapsuleBuffer=null]
+ * @returns {Promise<{ id: string, owner: string }>}
+ */
+export async function createVaultGist(token, vaultData, encryptedCapsuleBuffer = null) {
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'swep-cli',
+  };
+
+  const files = {
+    'vault.json': {
+      content: JSON.stringify(vaultData, null, 2),
+    },
+  };
+
+  if (encryptedCapsuleBuffer && Buffer.isBuffer(encryptedCapsuleBuffer)) {
+    files['profile.capsule.enc.b64'] = {
+      content: encryptedCapsuleBuffer.toString('base64'),
+    };
+  }
+
+  try {
+    const res = await axios.post(
+      'https://api.github.com/gists',
+      {
+        description: 'Swep Encrypted Vault (Zero-Server Secret Capability)',
+        public: false,
+        files,
+      },
+      { headers }
+    );
+    return {
+      id: res.data.id,
+      owner: res.data.owner?.login?.toLowerCase() || '',
+    };
+  } catch (err) {
+    const msg = err.response?.data?.message || err.message;
+    throw new Error(`Lỗi khi tạo Secret Gist trên GitHub: ${msg}`);
+  }
+}
+
+/**
+ * Cập nhật Secret Gist trên GitHub
+ * @param {string} token
+ * @param {string} gistId
+ * @param {object|null} [vaultData=null]
+ * @param {Buffer|null} [encryptedCapsuleBuffer=null]
+ * @returns {Promise<boolean>}
+ */
+export async function updateVaultGist(token, gistId, vaultData = null, encryptedCapsuleBuffer = null) {
+  const cleanId = gistId.replace(/^gist:/, '');
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'swep-cli',
+  };
+
+  const files = {};
+  if (vaultData) {
+    files['vault.json'] = {
+      content: JSON.stringify(vaultData, null, 2),
+    };
+  }
+  if (encryptedCapsuleBuffer && Buffer.isBuffer(encryptedCapsuleBuffer)) {
+    files['profile.capsule.enc.b64'] = {
+      content: encryptedCapsuleBuffer.toString('base64'),
+    };
+  }
+
+  try {
+    await axios.patch(
+      `https://api.github.com/gists/${cleanId}`,
+      {
+        description: 'Swep Encrypted Vault (Zero-Server Secret Capability)',
+        files,
+      },
+      { headers }
+    );
+    return true;
+  } catch (err) {
+    const msg = err.response?.data?.message || err.message;
+    throw new Error(`Không thể cập nhật Secret Gist: ${msg}`);
+  }
+}
+
+/**
+ * Tải file vault.json từ Secret Gist qua Capability Raw URL mà KHÔNG CẦN token
+ * @param {string} handle
+ * @param {string} gistId
+ * @returns {Promise<object>}
+ */
+export async function fetchVaultFromGist(handle, gistId) {
+  const cleanId = gistId.replace(/^gist:/, '');
+  const url = `https://gist.githubusercontent.com/${handle}/${cleanId}/raw/vault.json?t=${Date.now()}`;
+  try {
+    const res = await axios.get(url, {
+      timeout: 10000,
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'User-Agent': 'swep-cli',
+      },
+    });
+    return { ...res.data, _repo: `gist:${cleanId}`, _gistId: cleanId };
+  } catch {
+    throw new Error(`Không tìm thấy Vault trong Secret Gist '${cleanId}' của '${handle}'.`);
+  }
+}
+
+/**
+ * Tải file profile.capsule.enc từ Secret Gist qua Capability Raw URL mà KHÔNG CẦN token
+ * @param {string} handle
+ * @param {string} gistId
+ * @returns {Promise<Buffer|null>}
+ */
+export async function fetchProfileCapsuleFromGist(handle, gistId) {
+  const cleanId = gistId.replace(/^gist:/, '');
+  const url = `https://gist.githubusercontent.com/${handle}/${cleanId}/raw/profile.capsule.enc.b64?t=${Date.now()}`;
+  try {
+    const res = await axios.get(url, {
+      timeout: 30000,
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'User-Agent': 'swep-cli',
+      },
+    });
+    if (res.data && typeof res.data === 'string') {
+      return Buffer.from(res.data.trim(), 'base64');
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Tải file vault.json trực tiếp từ GitHub mà không cần token
  * @param {string} handle - GitHub username
@@ -17,6 +164,9 @@ import axios from 'axios';
  * @returns {Promise<object>} Dữ liệu vault đã mã hóa
  */
 export async function fetchVault(handle, repoName = 'swep-vault') {
+  if (isGistTarget(repoName)) {
+    return fetchVaultFromGist(handle, repoName);
+  }
   const url = `https://raw.githubusercontent.com/${handle}/${repoName}/main/vault.json?t=${Date.now()}`;
   try {
     const res = await axios.get(url, {
@@ -151,6 +301,9 @@ export async function ensureVaultRepo(token, repoName = 'swep-vault') {
  * @returns {Promise<boolean>}
  */
 export async function uploadVaultToGitHub(token, handle, encryptedVault, repoName = 'swep-vault') {
+  if (isGistTarget(repoName)) {
+    return updateVaultGist(token, repoName, encryptedVault, null);
+  }
   const headers = {
     Authorization: `Bearer ${token}`,
     Accept: 'application/vnd.github+json',
@@ -194,6 +347,9 @@ export async function uploadVaultToGitHub(token, handle, encryptedVault, repoNam
  * @returns {Promise<Buffer|null>} Dữ liệu capsule đã mã hóa, hoặc null nếu chưa có
  */
 export async function fetchProfileCapsuleFromGitHub(handle, repoName = 'swep-vault') {
+  if (isGistTarget(repoName)) {
+    return fetchProfileCapsuleFromGist(handle, repoName);
+  }
   const downloadUrl = `https://github.com/${handle}/${repoName}/releases/download/capsule/profile.capsule.enc?t=${Date.now()}`;
   try {
     const res = await axios.get(downloadUrl, {
@@ -224,6 +380,9 @@ export async function fetchProfileCapsuleFromGitHub(handle, repoName = 'swep-vau
  * @returns {Promise<boolean>}
  */
 export async function uploadProfileCapsuleToGitHub(token, handle, encryptedCapsuleBuffer, repoName = 'swep-vault') {
+  if (isGistTarget(repoName)) {
+    return updateVaultGist(token, repoName, null, encryptedCapsuleBuffer);
+  }
   const headers = {
     Authorization: `Bearer ${token}`,
     Accept: 'application/vnd.github+json',

@@ -91,4 +91,52 @@ test('vault: recovery key decrypts DEK and regenerates wrap_code with random sal
   assert.strictEqual(decryptedObj.dek, dek.toString('hex'));
 });
 
+test('vault: isGistTarget identifies gist IDs and prefixes', async () => {
+  const { isGistTarget } = await import('../src/vault.js');
+  assert.strictEqual(isGistTarget('gist:aa5a315d61ae9438b18d'), true);
+  assert.strictEqual(isGistTarget('aa5a315d61ae9438b18d'), true);
+  assert.strictEqual(isGistTarget('d41d8cd98f00b204e9800998ecf8427e'), true);
+  assert.strictEqual(isGistTarget('swep-vault'), false);
+  assert.strictEqual(isGistTarget('swep-vault-2'), false);
+  assert.strictEqual(isGistTarget(''), false);
+  assert.strictEqual(isGistTarget(null), false);
+});
+
+test('vault: code rotation invalidates previous login code permanently', async () => {
+  const cryptoModule = await import('crypto');
+  const handle = 'rotationuser';
+  const dek = generateDEK();
+
+  // First session: Code 0
+  const code0 = generateCode(10);
+  const salt0 = cryptoModule.default.randomBytes(16);
+  const seed0 = await deriveSeed(normalizeCode(code0), handle, salt0);
+  const codeKey0 = hkdf(seed0, 'swep/wrap');
+  let currentWrapCode = aead_encrypt(codeKey0, { dek: dek.toString('hex') }, `${handle}/code`);
+
+  // Verify Code 0 can decrypt
+  const clientSeed0 = await deriveSeed(normalizeCode(code0), handle, salt0);
+  const clientKey0 = hkdf(clientSeed0, 'swep/wrap');
+  const obj0 = aead_decrypt(clientKey0, currentWrapCode, `${handle}/code`);
+  assert.strictEqual(obj0.dek, dek.toString('hex'));
+
+  // End of session: ROTATE to Code 1
+  const code1 = generateCode(10);
+  const salt1 = cryptoModule.default.randomBytes(16);
+  const seed1 = await deriveSeed(normalizeCode(code1), handle, salt1);
+  const codeKey1 = hkdf(seed1, 'swep/wrap');
+  currentWrapCode = aead_encrypt(codeKey1, { dek: dek.toString('hex') }, `${handle}/code`);
+
+  // Code 1 successfully decrypts
+  const clientSeed1 = await deriveSeed(normalizeCode(code1), handle, salt1);
+  const clientKey1 = hkdf(clientSeed1, 'swep/wrap');
+  const obj1 = aead_decrypt(clientKey1, currentWrapCode, `${handle}/code`);
+  assert.strictEqual(obj1.dek, dek.toString('hex'));
+
+  // Attempting to decrypt rotated vault with OLD Code 0 MUST FAIL
+  assert.throws(() => {
+    aead_decrypt(clientKey0, currentWrapCode, `${handle}/code`);
+  });
+});
+
 

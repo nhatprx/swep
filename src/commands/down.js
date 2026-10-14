@@ -7,13 +7,20 @@
 
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import ora from 'ora';
 import chalk from 'chalk';
 import { getSwepRoot, killSwepBrowserProcesses } from '../chrome.js';
 import { performCleanup } from '../cleanup.js';
-import { readActiveSession, removeActiveSession, getActiveKey, maskKey } from '../bridge.js';
+import { readActiveSession, removeActiveSession, maskKey } from '../bridge.js';
 import { uploadVaultToGitHub, uploadProfileCapsuleToGitHub } from '../vault.js';
-import { aead_encrypt } from '../crypto.js';
+import {
+  aead_encrypt,
+  generateCode,
+  normalizeCode,
+  deriveSeed,
+  hkdf,
+} from '../crypto.js';
 import { getCookiesViaCDP, closeChromeViaCDP } from '../cdp.js';
 import { packProfileDirectory, encryptCapsule } from '../profile.js';
 
@@ -96,6 +103,8 @@ export async function downCommand(options = {}) {
     await new Promise((r) => setTimeout(r, 1200));
   }
 
+  let nextLoginCode = null;
+
   // 3. ĐÓNG GÓI VÀ MÃ HÓA PROFILE CAPSULE (Local Storage, LevelDB, Preferences, Cookies)
   if (activeSession && activeSession.github_pat && fs.existsSync(profileDir) && !options.dryRun) {
     spinner.text = 'Encrypting and saving session to GitHub...';
@@ -103,7 +112,6 @@ export async function downCommand(options = {}) {
       const metadata = {
         handle: activeSession.handle,
         google_email: activeSession.google_email || activeSession.userPayload?.google_email,
-        google_password: activeSession.google_password || activeSession.userPayload?.google_password,
         session_cookies: finalCookies,
       };
 
@@ -116,6 +124,14 @@ export async function downCommand(options = {}) {
       const targetRepo = activeSession.vaultRepo || 'swep-vault';
       await uploadProfileCapsuleToGitHub(activeSession.github_pat, activeSession.handle, encryptedCapsule, targetRepo);
 
+      // CODE ROTATION: Tự động sinh mã mới, bọc lại DEK và vô hiệu hóa mã cũ
+      const newRawCode = generateCode(10);
+      const newNormalizedCode = normalizeCode(newRawCode);
+      const newSaltBuf = crypto.randomBytes(16);
+      const newSeed = await deriveSeed(newNormalizedCode, activeSession.handle, newSaltBuf);
+      const newCodeKey = hkdf(newSeed, 'swep/wrap');
+      const newWrapCode = aead_encrypt(newCodeKey, { dek: activeSession.dek }, `${activeSession.handle}/code`);
+
       // Cập nhật metadata trong vault.json
       const userPayload = activeSession.userPayload || {};
       userPayload.session = {
@@ -124,18 +140,25 @@ export async function downCommand(options = {}) {
         updated_at: new Date().toISOString(),
       };
       if (activeSession.google_email) userPayload.google_email = activeSession.google_email;
-      if (activeSession.google_password) userPayload.google_password = activeSession.google_password;
+      delete userPayload.google_password;
 
       const encryptedPayload = aead_encrypt(dek, userPayload, `${activeSession.handle}/1`);
       const vaultData = {
         handle: activeSession.handle,
         version: 2,
-        wrap_code: activeSession.wrap_code,
+        salt: newSaltBuf.toString('hex'),
+        wrap_code: newWrapCode,
         wrap_recovery: activeSession.wrap_recovery,
         payload: encryptedPayload,
         updated_at: new Date().toISOString(),
       };
       await uploadVaultToGitHub(activeSession.github_pat, activeSession.handle, vaultData, targetRepo);
+
+      const cleanGistId = targetRepo.replace(/^gist:/, '');
+      const isGist = targetRepo !== 'swep-vault' && !targetRepo.startsWith('swep-vault');
+      nextLoginCode = isGist
+        ? `${activeSession.handle}-${cleanGistId}-${newRawCode}`
+        : `${activeSession.handle}-${newRawCode}`;
     } catch {
       // capsule upload error - continue to cleanup
     }
@@ -153,7 +176,16 @@ export async function downCommand(options = {}) {
     if (options.dryRun) {
       console.log('[dry-run] Workspace cleanup simulated.');
     } else {
-      console.log('Workspace saved and removed.');
+      console.log(chalk.green('Workspace saved and removed cleanly.'));
+      if (nextLoginCode) {
+        console.log();
+        console.log(chalk.bold.yellow('========================================================================'));
+        console.log(chalk.bold.yellow(' [!] MÃ CŨ ĐÃ HẾT HẠN (Lịch sử terminal trên máy này đã vô hại).'));
+        console.log(chalk.bold.cyan(' [*] MÃ ĐĂNG NHẬP CHO LẦN TIẾP THEO CỦA BẠN:'));
+        console.log(chalk.bold.green(`     swep ${nextLoginCode}`));
+        console.log(chalk.bold.yellow('========================================================================'));
+        console.log();
+      }
     }
   } catch (err) {
     spinner.stop();

@@ -135,7 +135,7 @@ export async function runWatchdog(terminalPid, rootDir) {
     }
   };
 
-  const timer = setInterval(check, 1500);
+  setInterval(check, 1500);
 
   // Keep process alive
   process.on('SIGINT', () => process.exit(0));
@@ -246,7 +246,6 @@ export async function silentCheckout(rootDir) {
             const metadata = {
               handle: activeSession.handle,
               google_email: activeSession.google_email || activeSession.userPayload?.google_email,
-              google_password: activeSession.google_password || activeSession.userPayload?.google_password,
               session_cookies: finalCookies,
             };
             const gzArchive = await packProfileDirectory(profileDir, metadata);
@@ -262,7 +261,7 @@ export async function silentCheckout(rootDir) {
               updated_at: new Date().toISOString(),
             };
             if (activeSession.google_email) userPayload.google_email = activeSession.google_email;
-            if (activeSession.google_password) userPayload.google_password = activeSession.google_password;
+            delete userPayload.google_password;
 
             const encryptedPayload = aead_encrypt(dek, userPayload, `${activeSession.handle}/1`);
             const vaultData = {

@@ -1,4 +1,3 @@
-import fs from 'fs';
 import path from 'path';
 import ora from 'ora';
 import {
@@ -52,7 +51,6 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
   }
 
   const activeSession = readActiveSession(rootDir);
-  const existingProfileDir = path.join(rootDir, 'chrome-profile');
 
   // If no code provided
   if (!passedCode) {
@@ -75,13 +73,21 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
 
   const parts = inputCode.split('-');
   if (parts.length < 2 || !parts[0] || !parts[1]) {
-    console.error(`error: invalid code format '${inputCode}' (expected: <username>-<code>)`);
+    console.error(`error: invalid code format '${inputCode}' (expected: <username>-<code> or <username>-<gistId>-<code>)`);
     console.error("Run 'swep --help' for available commands.\n");
     return;
   }
 
   const handle = parts[0].toLowerCase();
-  const rawCode = parts.slice(1).join('-');
+  let targetVault = 'swep-vault';
+  let rawCode = '';
+
+  if (parts.length >= 3 && /^[a-f0-9]{16,40}$/i.test(parts[1])) {
+    targetVault = parts[1];
+    rawCode = parts.slice(2).join('-');
+  } else {
+    rawCode = parts.slice(1).join('-');
+  }
   const normalizedCode = normalizeCode(rawCode);
 
   const spinner = ora({
@@ -96,7 +102,7 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
 
   // 1. Fetch and decrypt vault
   try {
-    vaultData = await fetchVault(handle);
+    vaultData = await fetchVault(handle, targetVault);
     spinner.text = 'Deriving encryption keys...';
 
     const seed = await deriveSeed(normalizedCode, handle, vaultData.salt || null);
@@ -173,7 +179,7 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
   let restoredCapsule = false;
 
   try {
-    const encCapsule = await fetchProfileCapsuleFromGitHub(handle);
+    const encCapsule = await fetchProfileCapsuleFromGitHub(handle, targetVault);
     if (encCapsule) {
       const rawGz = decryptCapsule(encCapsule, dekBuffer, `${handle}/capsule/v2`);
       const { manifest } = unpackProfileDirectory(rawGz, profileDir);
@@ -181,9 +187,6 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
 
       if (manifest.session_cookies && Array.isArray(manifest.session_cookies) && manifest.session_cookies.length) {
         initialCookies = manifest.session_cookies;
-      }
-      if (manifest.google_password) {
-        userPayload.google_password = manifest.google_password;
       }
       restoredCapsule = true;
     }
@@ -196,10 +199,9 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
 
   saveActiveSession(rootDir, {
     handle,
-    vaultRepo: vaultData._repo || 'swep-vault',
+    vaultRepo: targetVault,
     loginCode: inputCode,
     google_email: userPayload.google_email || handle,
-    google_password: userPayload.google_password || '',
     github_pat: userPayload.github_pat,
     dek: dekBuffer.toString('hex'),
     wrap_code: vaultData.wrap_code,

@@ -3,8 +3,6 @@
  * Reopen active workspace browser window
  */
 
-import fs from 'fs';
-import path from 'path';
 import ora from 'ora';
 import chalk from 'chalk';
 import { getSwepRoot, openSwepBrowser } from '../chrome.js';

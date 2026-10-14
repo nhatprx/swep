@@ -6,7 +6,6 @@
  */
 
 import { program } from 'commander';
-import chalk from 'chalk';
 import {
   registerCommand,
   loginCommand,
@@ -15,7 +14,6 @@ import {
   revokeCommand,
   doctorCommand,
   openCommand,
-  chromeCommand,
   checkoutCommand,
   updateCommand,
 } from '../src/commands/index.js';
@@ -42,7 +40,7 @@ if (process.argv[2] === '_watchdog') {
   process.on('SIGBREAK', onSignal);
   process.on('SIGHUP', onSignal);
 
-  const version = '0.1.7';
+  const version = '0.1.8';
 
   program
     .name('swep')

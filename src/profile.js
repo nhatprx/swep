@@ -69,6 +69,9 @@ const EXCLUDE_DIRS = new Set([
   'discounts_db',
   'discount_infos_db',
   'Feature Engagement Tracker',
+  'Service Worker',
+  'File System',
+  'Session Storage',
 ]);
 
 // Các file lock hoặc tạm thời
@@ -222,6 +225,10 @@ export async function packProfileDirectory(profileDir, metadata = {}) {
         fileEntries.push({ path: relPath, isDir: true, data: null });
         scan(fullPath, relPath);
       } else if (stat.isFile()) {
+        // Bỏ qua các file phình to (> 5MB) để đảm bảo capsule luôn siêu nhẹ (< 2MB)
+        if (stat.size > 5 * 1024 * 1024) {
+          continue;
+        }
         try {
           const data = fs.readFileSync(fullPath);
           fileEntries.push({ path: relPath, isDir: false, data });

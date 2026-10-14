@@ -7,13 +7,14 @@
 import crypto from 'crypto';
 import chalk from 'chalk';
 import ora from 'ora';
-import { printBanner, printBox, prompt, promptSecret, promptConfirm, createSpinner } from '../ui.js';
+import { promptSecret, promptConfirm } from '../ui.js';
 import { openCleanBrowserForGitHub, getClipboardText } from '../chrome.js';
 import { getGitHubUser } from '../github.js';
 import {
   ensureVaultRepo,
   uploadVaultToGitHub,
   checkVaultRepoExists,
+  createVaultGist,
 } from '../vault.js';
 import {
   generateDEK,
@@ -27,7 +28,7 @@ import {
 } from '../crypto.js';
 
 export async function registerCommand(options) {
-  const tokenUrl = 'https://github.com/settings/tokens/new?description=Swep+Vault+Access&scopes=public_repo';
+  const tokenUrl = 'https://github.com/settings/tokens/new?description=Swep+Vault+Access&scopes=gist';
 
   try {
     await openCleanBrowserForGitHub(tokenUrl);
@@ -138,27 +139,37 @@ export async function registerCommand(options) {
     updated_at: new Date().toISOString(),
   };
 
+  let gistId = null;
+
   if (!options.dryRun) {
-    spinner.text = `Initializing ${targetRepo} repository on GitHub...`;
+    spinner.text = 'Initializing Secret Gist vault on GitHub (Zero-Server Capability)...';
     try {
-      await ensureVaultRepo(cleanToken, targetRepo);
-      spinner.text = `Uploading encrypted vault to GitHub (${targetRepo})...`;
-      await uploadVaultToGitHub(cleanToken, handle, vaultData, targetRepo);
-    } catch (err) {
-      spinner.stop();
-      console.error(`error: ${err.message}`);
-      return;
+      const gistRes = await createVaultGist(cleanToken, vaultData);
+      gistId = gistRes.id;
+    } catch {
+      // Fallback to repository if token has repo scope instead of gist
+      spinner.text = `Fallback: Initializing ${targetRepo} repository on GitHub...`;
+      try {
+        await ensureVaultRepo(cleanToken, targetRepo);
+        spinner.text = `Uploading encrypted vault to GitHub (${targetRepo})...`;
+        await uploadVaultToGitHub(cleanToken, handle, vaultData, targetRepo);
+      } catch (err) {
+        spinner.stop();
+        console.error(`error: ${err.message}`);
+        return;
+      }
     }
   }
 
   spinner.stop();
 
-  const fullLoginCode = `${handle}-${rawCode}`;
+  const fullLoginCode = gistId ? `${handle}-${gistId}-${rawCode}` : `${handle}-${rawCode}`;
+  const vaultDisplay = gistId ? chalk.green(`Secret Gist (ID: ${gistId})`) : chalk.cyan(`https://github.com/${handle}/${targetRepo}`);
 
   console.log();
   console.log(chalk.dim('  login code:   ') + chalk.bold.green(fullLoginCode));
   console.log(chalk.dim('  recovery key: ') + chalk.bold.yellow(recoveryKey));
-  console.log(chalk.dim('  vault repo:   ') + chalk.cyan(`https://github.com/${handle}/${targetRepo}`));
+  console.log(chalk.dim('  vault type:   ') + vaultDisplay);
   console.log();
   console.log(`Registered. Run 'swep ${chalk.bold.green(fullLoginCode)}' to start workspace.\n`);
 }

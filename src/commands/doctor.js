@@ -8,8 +8,6 @@ import fs from 'fs';
 import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import chalk from 'chalk';
-import { printBanner } from '../ui.js';
 import { findChromePath, getSwepRoot } from '../chrome.js';
 import { defaultGate } from '../gate.js';
 
