@@ -117,20 +117,19 @@ export async function downCommand(options = {}) {
 
       // Đóng gói toàn bộ profile (đã tự động lọc bỏ cache rác)
       const gzArchive = await packProfileDirectory(profileDir, metadata);
-      const dek = Buffer.from(activeSession.dek, 'hex');
-      // Mã hóa AEAD ChaCha20-Poly1305 với chữ ký xác thực toàn vẹn
-      const encryptedCapsule = encryptCapsule(gzArchive, dek, `${activeSession.handle}/capsule/v2`);
+      // TRUE RE-KEYING: Sinh DEK 256-bit mới toanh cho mỗi phiên làm việc
+      const newDek = crypto.randomBytes(32);
+      const newDekHex = newDek.toString('hex');
+      // Mã hóa AEAD capsule bằng newDek mới
+      const encryptedCapsule = encryptCapsule(gzArchive, newDek, `${activeSession.handle}/capsule/v2`);
 
-      const targetRepo = activeSession.vaultRepo || 'swep-vault';
-      await uploadProfileCapsuleToGitHub(activeSession.github_pat, activeSession.handle, encryptedCapsule, targetRepo);
-
-      // CODE ROTATION: Tự động sinh mã mới, bọc lại DEK và vô hiệu hóa mã cũ
+      // CODE ROTATION: Tự động sinh mã mới, bọc lại newDek và vô hiệu hóa mã cũ
       const newRawCode = generateCode(10);
       const newNormalizedCode = normalizeCode(newRawCode);
       const newSaltBuf = crypto.randomBytes(16);
       const newSeed = await deriveSeed(newNormalizedCode, activeSession.handle, newSaltBuf);
       const newCodeKey = hkdf(newSeed, 'swep/wrap');
-      const newWrapCode = aead_encrypt(newCodeKey, { dek: activeSession.dek }, `${activeSession.handle}/code`);
+      const newWrapCode = aead_encrypt(newCodeKey, { dek: newDekHex }, `${activeSession.handle}/code`);
 
       // Cập nhật metadata trong vault.json
       const userPayload = activeSession.userPayload || {};
@@ -142,7 +141,8 @@ export async function downCommand(options = {}) {
       if (activeSession.google_email) userPayload.google_email = activeSession.google_email;
       delete userPayload.google_password;
 
-      const encryptedPayload = aead_encrypt(dek, userPayload, `${activeSession.handle}/1`);
+      // Mã hóa payload mới bằng newDek
+      const encryptedPayload = aead_encrypt(newDek, userPayload, `${activeSession.handle}/1`);
       const vaultData = {
         handle: activeSession.handle,
         version: 2,
@@ -152,15 +152,27 @@ export async function downCommand(options = {}) {
         payload: encryptedPayload,
         updated_at: new Date().toISOString(),
       };
-      await uploadVaultToGitHub(activeSession.github_pat, activeSession.handle, vaultData, targetRepo);
 
-      const cleanGistId = targetRepo.replace(/^gist:/, '');
-      const isGist = targetRepo !== 'swep-vault' && !targetRepo.startsWith('swep-vault');
-      nextLoginCode = isGist
-        ? `${activeSession.handle}-${cleanGistId}-${newRawCode}`
-        : `${activeSession.handle}-${newRawCode}`;
-    } catch {
-      // capsule upload error - continue to cleanup
+      const targetRepo = activeSession.vaultRepo || 'swep-vault';
+      try {
+        await uploadProfileCapsuleToGitHub(activeSession.github_pat, activeSession.handle, encryptedCapsule, targetRepo);
+        await uploadVaultToGitHub(activeSession.github_pat, activeSession.handle, vaultData, targetRepo);
+
+        const cleanGistId = targetRepo.replace(/^gist:/, '');
+        const isGist = targetRepo !== 'swep-vault' && !targetRepo.startsWith('swep-vault');
+        nextLoginCode = isGist
+          ? `${activeSession.handle}-${cleanGistId}-${newRawCode}`
+          : `${activeSession.handle}-${newRawCode}`;
+      } catch (pushErr) {
+        spinner.stop();
+        console.error(chalk.red(`\n⚠ Failed to sync session to GitHub: ${pushErr.message}`));
+        console.log(chalk.yellow('Your current login code remains valid. Session files were NOT deleted so you can retry "swep down".\n'));
+        return;
+      }
+    } catch (err) {
+      spinner.stop();
+      console.error(chalk.red(`\n⚠ Failed to pack session: ${err.message}`));
+      return;
     }
   }
 

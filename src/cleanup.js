@@ -5,12 +5,41 @@
 
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import chalk from 'chalk';
 import { killSwepChromeProcesses, runHiddenPowerShell } from './chrome.js';
 
 const execAsync = promisify(exec);
+
+/**
+ * Fast single-pass random overwrite and truncate before unlink (NIST SP 800-88 Clear level)
+ * @param {string} filePath
+ */
+export function secureZeroFile(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return;
+    const stat = fs.statSync(filePath);
+    if (stat.isFile() && stat.size > 0) {
+      const fd = fs.openSync(filePath, 'r+');
+      const chunkSize = Math.min(stat.size, 65536);
+      const randomBuf = crypto.randomBytes(chunkSize);
+      let remaining = stat.size;
+      while (remaining > 0) {
+        const toWrite = Math.min(remaining, chunkSize);
+        fs.writeSync(fd, randomBuf, 0, toWrite);
+        remaining -= toWrite;
+      }
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+      fs.truncateSync(filePath, 0);
+    }
+    fs.unlinkSync(filePath);
+  } catch {
+    try { fs.unlinkSync(filePath); } catch {}
+  }
+}
 
 /**
  * Đảm bảo các thư mục trạng thái tồn tại
@@ -188,12 +217,12 @@ export async function performCleanup(rootDir, options = {}) {
       report.removedFiles.push(logsDir);
     }
 
-    // Xóa các file session và extension tạm thời
+    // Xóa an toàn các file session và extension tạm thời (NIST SP 800-88 Clear)
     for (const f of ['latest-cookies.json', 'active-session.json', 'watchdog.pid']) {
       const fp = path.join(rootDir, f);
       if (fs.existsSync(fp)) {
         try {
-          fs.unlinkSync(fp);
+          secureZeroFile(fp);
           report.removedFiles.push(fp);
         } catch {}
       }

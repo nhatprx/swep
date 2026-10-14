@@ -212,11 +212,9 @@ export async function loginCommand(codeOrOptions, maybeOptions = {}) {
 
   await spawnWatchdog(rootDir, process.ppid);
 
-  // 5. Launch Browser
+  // 5. Launch Browser & Inject Plaintext Cookies via CDP (bypassing DPAPI/App-Bound Encryption)
   spinner.text = 'Launching browser...';
-  if (restoredCapsule) {
-    await launchIsolatedBrowser(browserExe, rootDir, targetUrl, cdpPort);
-  } else if (initialCookies.length > 0) {
+  if (initialCookies.length > 0) {
     await launchIsolatedBrowser(browserExe, rootDir, 'about:blank', cdpPort);
     try {
       await injectCookiesViaCDP(cdpPort, initialCookies);

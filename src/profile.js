@@ -81,6 +81,8 @@ const EXCLUDE_FILES = new Set([
   'SingletonCookie',
   'SingletonSocket',
   'chrome_debug.log',
+  'Cookies',
+  'Cookies-journal',
 ]);
 
 const EXCLUDE_EXTS = new Set([

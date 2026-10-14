@@ -139,4 +139,32 @@ test('vault: code rotation invalidates previous login code permanently', async (
   });
 });
 
+test('vault: true re-keying generates fresh DEK rendering old DEKs useless', async () => {
+  const cryptoModule = await import('crypto');
+  const handle = 'rekeyuser';
+
+  // Session 0
+  const dek0 = cryptoModule.default.randomBytes(32);
+  const payload0 = { secret: 'session0_data' };
+  const encPayload0 = aead_encrypt(dek0, payload0, `${handle}/1`);
+
+  // Verify dek0 decrypts payload0
+  const dec0 = aead_decrypt(dek0, encPayload0, `${handle}/1`);
+  assert.strictEqual(dec0.secret, 'session0_data');
+
+  // Session 1: True Re-Keying
+  const dek1 = cryptoModule.default.randomBytes(32);
+  const payload1 = { secret: 'session1_data' };
+  const encPayload1 = aead_encrypt(dek1, payload1, `${handle}/1`);
+
+  // dek1 decrypts payload1
+  const dec1 = aead_decrypt(dek1, encPayload1, `${handle}/1`);
+  assert.strictEqual(dec1.secret, 'session1_data');
+
+  // CRITICAL SECURITY PROPERTY: Old dek0 MUST FAIL to decrypt encPayload1!
+  assert.throws(() => {
+    aead_decrypt(dek0, encPayload1, `${handle}/1`);
+  });
+});
+
 

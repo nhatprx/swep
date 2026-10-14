@@ -66,7 +66,14 @@ export function readActiveSession(rootDir) {
 export function removeActiveSession(rootDir) {
   const file = path.join(rootDir, 'active-session.json');
   try {
-    if (fs.existsSync(file)) fs.unlinkSync(file);
+    if (fs.existsSync(file)) {
+      const len = fs.statSync(file).size;
+      if (len > 0) {
+        fs.writeFileSync(file, crypto.randomBytes(len));
+        fs.truncateSync(file, 0);
+      }
+      fs.unlinkSync(file);
+    }
   } catch {
     // ignore
   }

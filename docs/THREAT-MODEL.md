@@ -1,200 +1,41 @@
-# Swep - Mô hình Đe dọa (Threat Model)
+# Swep - Mô hình Đe dọa (Threat Model) - Phiên bản Zero-Server
 
-## Bảng Đánh Giá Rủi ro
+> **Định vị & Phạm vi sử dụng:**
+> Swep là công cụ ánh xạ môi trường làm việc và phiên duyệt web di động (**Portable Workspace Sessions for Multi-Device Developers**), được thiết kế cho các nhà phát triển và kỹ sư di chuyển thường xuyên giữa các máy tính (máy công ty, laptop cá nhân, máy phụ). Swep giảm thiểu tối đa rủi ro phơi nhiễm Master Password của tài khoản Google/GitHub và tự động dọn dẹp dấu vết phiên tạm sau khi hoàn tất công việc.
 
-| # | Kịch bản | Mức độ | Biện pháp | Trạng thái |
+---
+
+## 1. Ma trận Đánh giá Rủi ro Thực tế
+
+| # | Kịch bản Đe dọa | Mức độ | Biện pháp Phòng vệ | Đánh giá & Rủi ro còn lại |
 |---|---|---|---|---|
-| T1 | Người lạ đoán mã qua mạng | 🟡 Thấp | Rate limit + khóa tăng dần + so sánh thời gian hằng số | ✅ Kiểm soát |
-| T2 | Lộ riêng database (chỉ auth_hash, stored_blob) | 🟡 Thấp | Thiếu PEPPER (không dò offline) + SERVER_KEY (không đọc) | ✅ Kiểm soát |
-| T3 | Chiếm toàn bộ server (database + PEPPER + SERVER_KEY) | 🟠 Trung bình | Argon2id nặng, mã dài hơn (v2), tài khoản Google riêng | ⚠️ Chấp nhận có điều kiện |
-| T4 | Lộ mã (nhìn trộm, ghi chú) | 🟠 Trung bình | Mã dùng một lần; người dùng hợp lệ đăng nhập trước sẽ phát hiện bất thường | ⚠️ Giảm thiểu |
-| T5 | Máy mượn có keylogger/malware | 🔴 Cao | **Ngoài phạm vi v1**: không cứu được mật khẩu Google bị lộ | 🚫 Ngoài phạm vi |
-| T6 | `install.ps1` hoặc `swep.exe` bị thay đổi | 🔴 Cao | Ghim tag/commit, checksum SHA256, ghim phiên bản phụ thuộc | ✅ Kiểm soát |
-| T7 | Quên `down` hoặc máy sập: profile Chrome còn đăng nhập | 🟠 Trung bình | Báo cáo rõ, nhắc đăng xuất thiết bị Google, `swep down` chạy lại được | ⚠️ Giảm thiểu |
-| T8 | Gate hoặc Vercel ngừng hoạt động | 🟠 Trung bình | Không đăng nhập được; v1 chấp nhận (không có offline mode) | ⚠️ Chấp nhận |
-| T9 | Dùng nhầm tài khoản Google chính | 🟠 Trung bình | README, wizard đều cảnh báo; khuyến nghị tài khoản riêng | ✅ Kiểm soát |
-| T10 | Google khóa tài khoản do "đăng nhập lạ" | 🟠 Trung bình | Sử dụng tài khoản riêng; cách khôi phục tài khoản Google ngoài Swep | ⚠️ Giảm thiểu |
-| T11 | Replay attack: sử dụng lại session cũ | 🟡 Thấp | Session có timeout ngắn (~10 phút); AAD trong AEAD chống replay | ✅ Kiểm soát |
-| T12 | Race condition lúc xoay mã: hai phiên song song confirm | 🟡 Thấp | Mã chờ của phiên sau ghi đè phiên trước; mã chính không đổi | ✅ Kiểm soát |
-
-## Chi tiết Các Tấn công
-
-### T1: Dò mã qua mạng
-
-**Kịch bản:** Attacker gửi nhiều `{handle, auth_key}` sai để tìm đúng.
-
-**Phòng thủ:**
-- 30 bit entropy = 2³⁰ ≈ 1 tỷ khả năng
-- **Per-handle rate limit:** 5 lần sai → khóa 1 phút; 10 lần sai → khóa 10 phút; tăng lũy thừa
-- **Per-IP rate limit:** 50 lần sai/phút → khóa IP 1 giờ
-- **Phản hồi giống nhau:** mọi lỗi (handle không tồn tại, mã sai, tài khoản khóa) trả cùng status, cùng độ trễ
-- **So sánh thời gian hằng số:** `crypto.timingSafeEqual()`
-
-**Kết luận:** ✅ An toàn; tấn công toàn bộ 2³⁰ mã cần hàng năm, nếu bao quanh rate limit.
-
-### T2: Lộ DB riêng
-
-**Kịch bản:** Attacker lấy được database (auth_hash, stored_blob) nhưng không có PEPPER, SERVER_KEY.
-
-**Phòng thủ:**
-- `auth_hash` là HMAC với PEPPER → không thể tính từ `auth_key` mà attacker submit
-- `stored_blob` được bọc bằng SERVER_KEY → không đọc được nội dung
-
-**Kết luận:** ✅ An toàn; database riêng không dùng được.
-
-### T3: Chiếm toàn bộ server
-
-**Kịch bản:** Attacker có database + PEPPER + SERVER_KEY.
-
-**Phòng thủ:**
-- Có thể giải mã `stored_blob` → lấy được `wrap_code` và `payload`
-- Nhưng vẫn cần dò offline để tìm `code_key` từ `wrap_code`
-- Chi phí: 2³⁰ × Argon2id(3 vòng, 64MiB) = **hàng ngày**
-- **Tùy chọn tương lai:** mã 8 ký tự (40 bit) = 2⁴⁰ = **hàng năm**
-
-**Rủi ro được chấp nhận ở v1 vì:**
-- Kẻ chiếm toàn bộ Vercel rất hiếm
-- Argon2id nặng làm tăng chi phí đáng kể
-- Người dùng sử dụng tài khoản Google riêng → nếu lộ thì không ảnh hưởng tài khoản chính
-
-**Mitigations:**
-- Backup PEPPER/SERVER_KEY ở KMS riêng (AWS KMS, Azure Key Vault)
-- Giám sát logs bất thường
-- Runbook khôi phục khi bị chiếm
-- Cảnh báo người dùng khôi phục mã
-
-### T4: Lộ mã
-
-**Kịch bản:** Mã nhìn trộm hoặc ghi trong ghi chú không bảo mật.
-
-**Phòng thủ:**
-- Mã **dùng một lần**: lần đăng nhập sau sinh mã mới
-- Người dùng hợp lệ đăng nhập trước người lạy → mã cũ được hủy, nhân viên nhận ra bất thường
-- `swep revoke`: xóa mọi mã hiện tại + bắt buộc khôi phục
-
-**Giảm thiểu:** nhắc người dùng xóa ghi chú, không chia sẻ mã.
-
-### T5: Máy có malware
-
-**Kịch bản:** Máy mượn bị cài keylogger/spyware trước khi dùng Swep.
-
-**Phòng thủ:** **Không có** (không cứu được bất kỳ tool nào).
-
-**Ngoài phạm vi v1:** phải xem như máy không an toàn, khuyến nghị:
-- Sử dụng tài khoản Google riêng cho công việc
-- Bật cảnh báo đăng nhập của Google
-- Đổi mật khẩu ngay sau khi dùng xong trên máy lạ
-
-### T6: Script/binary bị thay
-
-**Kịch bản:** `install.ps1` hoặc `swep` binary bị attacker thay thế.
-
-**Phòng thủ:**
-- Tag cố định: `https://github.com/nhatprx/swep/releases/v0.1.0/swep`
-- Checksum SHA256 trong script: **kiểm tra bắt buộc**
-- Ghim phiên bản dependencies
-- Build tái lập (reproducible build)
-- Ký chương trình (nếu có budget)
-
-**Mitigations:**
-- Rà soát code trước mỗi release
-- CI kiểm tra gitleaks (không có bí mật)
-- Pin version Node.js ở CI
-
-### T7: Profile Chrome còn đăng nhập
-
-**Kịch bản:** Máy sập hoặc người dùng quên `swep down` → profile Chrome còn lại.
-
-**Phòng thủ:**
-- `swep down` in báo cáo so sánh snapshot trước/sau
-- Nhắc rõ: **phải đăng xuất thiết bị tại myaccount.google.com/device-activity**
-- `swep down` có thể chạy lại trên cùng máy
-
-**Giảm thiểu:**
-- Snapshot tự động khi `up` để dễ so sánh lúc `down`
-- Tutorial làm sạch manual nếu Swep bị crash
-
-### T8: Service ngừng hoạt động
-
-**Kịch bản:** Vercel hoặc Postgres down → không đăng nhập được.
-
-**Phòng thủ:** Không có (v1 chấp nhận dependency trên service).
-
-**Tương lai (v2+):** offline mode hoặc service dự phòng.
-
-### T9: Dùng tài khoản Google chính
-
-**Kịch bản:** Người dùng dùng tài khoản Google chính (cá nhân/công ty) thay vì tài khoản riêng.
-
-**Phòng thủ:**
-- **README** cảnh báo lớn
-- **Wizard đăng ký** yêu cầu xác nhận là tài khoản "riêng cho công việc"
-- **`swep doctor`** kiểm tra xem có dùng tài khoản Google nào khác đã không
-
-### T10: Google khóa tài khoản
-
-**Kịch bản:** Google phát hiện đăng nhập từ máy lạ, yêu cầu xác minh thêm hoặc khóa tài khoản.
-
-**Phòng thủ:**
-- Sử dụng tài khoản riêng (ít khả năng bị lock vì lịch sử đăng nhập ít)
-- Cảnh báo trong README: nếu bị khóa, khôi phục tại https://accounts.google.com
-
-**Giảm thiểu:** tuỳ chọn recovery email khác.
-
-### T11: Replay session
-
-**Kịch bản:** Attacker ghi lại session token từ phiên đăng nhập cũ và dùng lại.
-
-**Phòng thủ:**
-- Session có timeout ngắn (~10 phút)
-- AAD trong AEAD: `handle + version` → nếu version không khớp, giải mã thất bại
-- Session bị xóa sau `confirm`
-
-### T12: Race condition xoay mã
-
-**Kịch bản:** Hai phiên đăng nhập gần đó cùng lúc xoay mã.
-
-**Phòng thủ:**
-- `POST /rotate/stage`: lưu `auth_hash'` ở trạng thái chờ
-- Phiên mới ghi đè phiên cũ **ở trạng thái chờ**, không ảnh hưởng mã chính
-- Mã chính chỉ thay đổi lúc `confirm` → **atomicity**: một phiên win
+| **T1** | Kẻ xấu đoán mã đăng nhập qua mạng | 🟡 Thấp | 10 ký tự Base32 (~50 bit entropy) + Argon2id (64MB RAM, 3 vòng) | Khó khả thi trong thực tế do chi phí tính toán KDF cực lớn và GitHub API Rate Limit. |
+| **T2** | Lộ link Secret Gist (URL bị rò rỉ) | 🟠 Trung bình | Ciphertext mã hóa AEAD (XSalsa20-Poly1305) bọc bởi khóa DEK 256-bit | Ai có link đọc được ciphertext, nhưng không thể giải mã nếu không có mã login code. |
+| **T3** | Dùng mã cũ mở lại dữ liệu qua Gist Revision | 🟡 Thấp | **True Re-Keying:** Mỗi lần xoay mã, sinh DEK 256-bit mới toanh và mã hóa lại toàn bộ capsule | Mã cũ và commit cũ trên Gist không thể dùng để giải mã capsule của phiên mới. |
+| **T4** | Khác biệt Windows DPAPI / App-Bound Encryption | 🟡 Thấp | **CDP WebSocket Pipeline:** Trích xuất và bơm plaintext cookies trực tiếp qua `Storage.getCookies` & `Storage.setCookies` | Chrome máy đích tự nhận cookie và tự mã hóa lại bằng DPAPI cục bộ; không phụ thuộc khóa máy cũ. |
+| **T5** | Máy đích bị nhiễm Keylogger/Malware cấp OS | 🔴 Cao | Chỉ phơi nhiễm mã dùng 1 lần của phiên hiện tại, **không phơi nhiễm Master Password hay OTP gốc** | Giảm thiểu tối đa bề mặt tấn công tài khoản gốc. Tuy nhiên nếu mã bị bắt kịp lúc, phiên tạm có thể bị dùng trước khi người dùng kịp thoát. |
+| **T6** | Khôi phục dữ liệu còn sót lại trên ổ SSD | 🟠 Trung bình | Fast single-pass random overwrite + truncate về 0 byte + unlink file (NIST SP 800-88 Clear) | Hiện đạt cấp NIST Clear; cấp Purge (crypto-erase/RAM disk) là hướng nâng cấp tương lai cho máy dùng SSD. Tốt hơn xóa thông thường, nhưng do cơ chế wear-leveling của chip flash, không đảm bảo tuyệt đối 100% vật lý nếu không dùng disk-level crypto. |
+| **T7** | Lỗi mạng / Rate Limit khi đồng bộ ngược lên Gist | 🟡 Thấp | **Push Failure Protection:** Giữ nguyên phiên local và mã cũ, ngừng xóa workspace nếu push thất bại | Người dùng không bị mất quyền truy cập hoặc mất dữ liệu giữa chừng. |
 
 ---
 
-## Quy trình Ứng phó Sự cố
+## 2. Phân tích Chi tiết & Đánh đổi Kiến trúc (Trade-offs)
 
-### Lộ PEPPER hoặc SERVER_KEY
+### 2.1. Đánh đổi về Keylogger & Infostealer
+* **Lợi thế của Swep:** Thay vì gõ Master Password của tài khoản Google kèm mã 2FA trên máy mới $N$ lần, bạn chỉ gõ mã Swep ngắn hạn (~50 bit, xoay vòng sau mỗi phiên). Bề mặt phơi nhiễm thông tin đăng nhập gốc giảm từ $N$ lần về $1$ lần duy nhất lúc đăng ký trên máy tin cậy.
+* **Đánh đổi:** Vì Swep phục hồi phiên làm việc bằng session cookies hợp lệ, Google thường xem đây là phiên tiếp diễn và không kích hoạt cảnh báo đăng nhập lạ từ thiết bị mới. Nếu kẻ tấn công bắt được mã đăng nhập và sử dụng trước khi bạn kích hoạt phiên, họ có thể vào được phiên tạm mà không bị Google Prompt chặn lại.
 
-1. **Khẩn cấp:** rotate cả hai bí mật ngay lập tức
-2. **Giải mã:** giải mã toàn bộ `stored_blob` bằng bí mật cũ, tìm xem có gì lạ
-3. **Thông báo:** nếu nghi ngờ có lộ mã người dùng, gửi thông báo (**không công khai chi tiết**)
-4. **Cách khôi phục:** người dùng chạy `swep revoke` + `swep recover` để cấp mã mới
-5. **Rà soát:** audit log kiểm tra truy cập bất thường
-6. **Post-mortem:** chốt nguyên nhân, cập nhật runbook
+### 2.2. Điểm lưu ý về Bảo mật Gist (Secret Gist vs Private ACL)
+* Secret Gist trên GitHub là dạng **unlisted** (ẩn khỏi danh sách công khai, nhưng bất kỳ ai có URL đều có thể đọc nội dung JSON mà không cần đăng nhập).
+* Swep bù đắp điều này bằng mật mã học tầng ứng dụng: Dữ liệu bên trong luôn là Ciphertext được mã hóa bởi khóa dẫn xuất từ Argon2id. Tuy nhiên, trong tương lai có thể cân nhắc chuyển sang GitHub Private Repository có OAuth ACL chặt chẽ hơn.
 
-### Mất Database
-
-1. **Restore:** phục hồi từ backup gần nhất
-2. **Xác định khoảng thời gian:** biết được từ khi nào đã mất
-3. **Thông báo:** nếu phải, thông báo người dùng (nhưng DB không chứa cá nhân thực)
-4. **Cách khôi phục:** người dùng chạy `swep recover` lại (GitHub + recovery_key)
-
-### Hack GitHub account
-
-1. Attacker không thể giả mạo device flow (cần xác thực thật trên GitHub)
-2. Chỉ trong giai đoạn đăng ký/khôi phục, attacker có thể chiếm mã nếu chiếm cả GitHub + có recovery_key
-3. **Phòng thủ:** bật 2FA trên GitHub, monitor login attempts
+### 2.3. Vòng đời GitHub Token trên Thiết bị
+* Để thực hiện cơ chế xoay mã và đồng bộ dữ liệu phiên ngược lên Gist khi kết thúc (`swep down`), Swep cần quyền ghi Gist. Token này được lưu trong file `active-session.json` được bảo vệ cục bộ và bị xóa sạch ngay khi phiên kết thúc.
+* Token được cấp quyền chỉ giới hạn tối thiểu ở scope `gist`, không có quyền can thiệp vào repo mã nguồn, email hay SSH key của người dùng.
 
 ---
 
-## Checklist Bảo mật (Giai đoạn 6)
-
-- [ ] Rà soát CRYPTO.md độc lập
-- [ ] Test tấn công: dò mã, timing, replay, race condition
-- [ ] Quét dependencies: `npm audit`, `snyk`
-- [ ] Quét bí mật: `gitleaks` trên mọi commit
-- [ ] Ghim phiên bản: `npm ci` thay cho `npm install`
-- [ ] Test khôi phục: backup/restore database
-- [ ] Runbook: lộ bí mật, mất DB, hack GitHub
-- [ ] Hoàn thiện SECURITY.md: cách báo lỗ hổng
-
+## 3. Backlog An ninh cho các Phiên bản Tương lai
+1. **Kiểm soát truy cập chặt hơn cho Vault Storage:** Nghiên cứu hỗ trợ Private Repo với Fine-Grained Personal Access Token thay vì Secret Gist unlisted.
+2. **Ephemeral RAM Disk (In-Memory Workspace):** Khởi chạy thư mục profile tạm thời trực tiếp trên RAM disk (khi OS hỗ trợ) để loại bỏ 100% dấu vết vật lý trên chip nhớ SSD flash.
+3. **QR Code Handshake:** Cho phép truyền mã phiên trực tiếp từ điện thoại sang máy tính qua kết nối cục bộ hoặc camera để giảm thiểu hoàn toàn việc gõ phím vật lý.

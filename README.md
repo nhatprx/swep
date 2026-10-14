@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  Ephemeral workspace manager with isolated Chrome profiles.
+  Portable workspace sessions for multi-device developers — Instant ephemeral Chrome sessions across your machines without master password exposure.
 </p>
 
 <p align="center">
@@ -67,8 +67,8 @@ npm install -g @nhatprx/swep
 ## Security
 
 - Client-Side Encryption: Sensitive data is encrypted on the local machine before upload.
-- Modern Cryptography: Authenticated encryption powered by ChaCha20-Poly1305 / TweetNaCl and Argon2id key derivation.
-- Zero Application Server: Stores encrypted blobs directly in GitHub repositories without middleman application servers.
+- Modern Cryptography: Authenticated encryption powered by XSalsa20-Poly1305 (TweetNaCl) and Argon2id key derivation.
+- Zero Application Server: Stores encrypted capability blobs in GitHub Secret Gists without middleman application servers.
 - Local Profile Isolation: Ephemeral browser profiles remain strictly segregated from personal browser profiles.
 - Vulnerability Reporting: For security disclosures, please consult [SECURITY.md](SECURITY.md) to report issues privately.
 

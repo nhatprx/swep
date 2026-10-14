@@ -70,8 +70,8 @@ wrap_recovery     = AEAD(recovery_key, DEK)     # bọc DEK bằng khóa khôi p
 
 ### AEAD
 
-- **Cipher:** XChaCha20-Poly1305 (hoặc AES-256-GCM nếu Node.js không hỗ trợ ChaCha)
-  - Nonce: 96-bit ngẫu nhiên (12 byte)
+- **Cipher:** XSalsa20-Poly1305 (TweetNaCl secretbox)
+  - Nonce: 192-bit ngẫu nhiên (24 bytes) từ CSPRNG
   - AAD (Associated Authenticated Data): `handle + version` (ví dụ: `"nhatprx/1"`)
 - **Lý do AAD:** chống replay khi xoay mã (mã mới không thể giải mã cũ, và ngược lại)
 
